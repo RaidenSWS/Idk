@@ -73,36 +73,35 @@ local function GetCurrentWave()
 end
 
 -- ============================================================================== --
--- // 🔥 ระบบ Auto Skip Wave (Smart Deep-Search & Force Fire)
+-- // 🔥 ระบบ Auto Skip Wave (Ultimate Force Click Edition)
 -- ============================================================================== --
-local cachedSkipBtn = nil
 task.spawn(function()
     while task.wait(1) do 
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                -- 1. ถ้ายังไม่มีปุ่มในความจำ หรือเริ่มด่านใหม่ ให้ควานหาปุ่มแบบดำน้ำลึก
-                if not cachedSkipBtn or not cachedSkipBtn.Parent then
-                    for _, obj in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
-                        if string.lower(obj.Name) == "auto" and obj.Parent and string.lower(obj.Parent.Name) == "autoskip" then
-                            cachedSkipBtn = obj
-                            break
-                        end
-                    end
-                end
+                -- เข้าถึงปุ่มตรงๆ ตาม Path เป๊ะๆ ที่คุณดึงมา
+                local btn = LocalPlayer.PlayerGui.autoskip.auto
+                local color = btn.BackgroundColor3
                 
-                -- ใช้ FindFirstChild ป้องกันสคริปต์ค้างถ้าเซิร์ฟเวอร์ยังโหลด Remote ไม่เสร็จ
-                local waveSkipRemote = EventFolder:FindFirstChild("waveSkip")
-                
-                -- 2. ถ้าเจอปุ่มบนจอ ให้เช็คสี
-                if cachedSkipBtn and waveSkipRemote then
-                    local color = cachedSkipBtn.BackgroundColor3
-                    if color.R > color.G then -- ถ้าค่าสีแดง (R) มากกว่าเขียว (G) แสดงว่า Off อยู่
-                        waveSkipRemote:FireServer(true)
+                -- เช็คว่าสีปุ่มเป็นสีแดง (255, 93, 93) หรือไม่ (R > G แปลว่ากำลัง Off)
+                if color.R > color.G then
+                    
+                    -- 🎯 ไม้ตายที่ 1: จำลองการ "คลิกเมาส์" ที่ปุ่มนั้น (หลอก LocalScript ของเกม)
+                    -- ตัวรันสคริปต์ (Executor) จะสั่ง Fire ลอจิกการคลิกทั้งหมดที่ฝังอยู่ในปุ่ม
+                    if getconnections then
+                        for _, conn in pairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end
+                        for _, conn in pairs(getconnections(btn.Activated)) do conn:Fire() end
+                    elseif firesignal then
+                        firesignal(btn.MouseButton1Click)
+                        firesignal(btn.Activated)
                     end
-                -- 3. ไม้ตาย: ถ้าหาปุ่ม UI บนจอไม่เจอจริงๆ บังคับยิง Remote ยัดเปิดไปเลย!
-                elseif waveSkipRemote then
-                    waveSkipRemote:FireServer(true)
-                    task.wait(2) -- หน่วงเวลาไว้หน่อย ป้องกันเกมเตะข้อหาสแปมคำสั่ง
+
+                    -- 🎯 ไม้ตายที่ 2: ยิง Remote ทับไปอีกชั้นเผื่อไว้ (ตามที่คุณดัก Remote Spy มาได้)
+                    local eventFolder = ReplicatedStorage:FindFirstChild("Event")
+                    if eventFolder and eventFolder:FindFirstChild("waveSkip") then
+                        eventFolder.waveSkip:FireServer(true)
+                    end
+                    
                 end
             end)
         end
