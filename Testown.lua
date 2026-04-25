@@ -231,7 +231,17 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
         targetLevel = instanceToLevel[tostring(targetId)]
     end
     
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
+    -- 🔥 เช็คความชัวร์จาก TowerData ในเกมเผื่อไว้ด้วย
+    local actualLevel = targetLevel
+    pcall(function()
+        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(tostring(targetId))
+        if tData and tData:GetAttribute("Upgrade") then
+            actualLevel = tonumber(tData:GetAttribute("Upgrade"))
+        end
+    end)
+    
+    -- 🔥 เพิ่ม stepData.level เข้าไปใน JSON
+    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = actualLevel }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
@@ -322,27 +332,30 @@ local function PlayMacroData()
         local useWave = Options.PlayModes.Value["Wave"]
         local useMoney = Options.PlayModes.Value["Money"]
         local customDelay = Options.StepDelay.Value
+        
+        -- 🔥 จับเวลา Global Time ตั้งแต่เริ่มกด Play
+        local playStartTime = tick()
 
         for i = 1, actionCount do
             if not isReplaying then return end 
             local step = _G.MacroData[tostring(i)]
             if not step then continue end
 
-            local waitTime = customDelay
-            if useTime then
-                local prevTime = 0
-                for j = i - 1, 1, -1 do
-                    if _G.MacroData[tostring(j)] then prevTime = _G.MacroData[tostring(j)].time; break end
-                end
-                local realTimeGap = step.time - prevTime
-                if realTimeGap > customDelay then waitTime = realTimeGap end
+            -- 1. บังคับรอ Step Delay เสมอ (ป้องกันเกมรวนถ้ายิงเร็วเกิน)
+            local passed = 0
+            while passed < customDelay do
+                if not isReplaying then return end
+                UpdateStatus("Playing", i, step.type, step.unit, string.format("Buffer (%.1fs)", customDelay - passed))
+                task.wait(0.1); passed = passed + 0.1
             end
 
-            local passed = 0
-            while passed < waitTime do
-                if not isReplaying then return end
-                UpdateStatus("Playing", i, step.type, step.unit, string.format("Time (%.1fs)", waitTime - passed))
-                task.wait(0.1); passed = passed + 0.1
+            -- 🔥 2. ระบบ Global Time (รอให้ถึงเวลาเป๊ะๆ ตามที่ Record ไว้)
+            if useTime then
+                while (tick() - playStartTime) < step.time do
+                    if not isReplaying then return end
+                    UpdateStatus("Playing", i, step.type, step.unit, string.format("Global Time (%.1fs)", step.time - (tick() - playStartTime)))
+                    task.wait(0.1)
+                end
             end
 
             if useWave and step.wave then
@@ -371,7 +384,6 @@ local function PlayMacroData()
                 targetPosCf = CFrame.new(unpack(p))
             end
 
-            -- 🔥 FAST EXECUTION & 15 ATTEMPTS ANTI-LAG
             if step.type == "Place" then
                 local isPlaced = false
                 local attempts = 0
@@ -384,16 +396,25 @@ local function PlayMacroData()
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
-                local preMoney = GetCurrentMoney()
+                local targetLvl = step.level or 1
                 repeat
+                    local isUpgraded = false
                     local unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
+                    
                     if unitToUpgrade then
-                        local idNum = tonumber(unitToUpgrade.Name)
-                        if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
+                        -- 🔥 เช็ค Attribute จาก TowerData ว่าอัพถึงขั้นที่ต้องการหรือยัง
+                        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(unitToUpgrade.Name)
+                        if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
+                            isUpgraded = true -- อัพเสร็จแล้ว ข้ามสเต็ปนี้ได้เลย!
+                        else
+                            local idNum = tonumber(unitToUpgrade.Name)
+                            if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
+                        end
                     end
+                    
                     task.wait(0.2)
                     attempts = attempts + 1
-                until GetCurrentMoney() < preMoney or attempts >= 15 or not isReplaying
+                until isUpgraded or attempts >= 15 or not isReplaying
 
             elseif step.type == "Sell" then
                 local attempts = 0
