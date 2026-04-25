@@ -581,31 +581,34 @@ task.spawn(function()
             local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
             local isEndedScreenVisible = false
             
-            -- เช็คชัวร์ๆ ว่ากล่องหลักมันถูก "เปิด (Enabled/Visible)" อยู่จริงๆ ไม่ใช่แค่ซ่อนไว้
             if gameEndedGui then
                 if gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled then
                     isEndedScreenVisible = true
                 elseif gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible then
                     isEndedScreenVisible = true
                 end
-            end
-            
-            if isEndedScreenVisible then
-                local replayBtn = gameEndedGui:FindFirstChild("Frame") and gameEndedGui.Frame:FindFirstChild("replay")
                 
-                if replayBtn and replayBtn.Visible then
-                    hasPlayedThisRound = false -- รีเซ็ตสถานะเตรียมรันรอบหน้า
+                local frame = gameEndedGui:FindFirstChild("Frame")
+                if isEndedScreenVisible and frame and frame.Visible then
+                    local replayBtn = frame:FindFirstChild("replay")
                     
-                    -- หยุด Record และเซฟอัตโนมัติ
-                    if Options.RecordMacro and Options.RecordMacro.Value then
-                        Options.RecordMacro:SetValue(false)
-                        Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
+                    if replayBtn and replayBtn.Visible then
+                        hasPlayedThisRound = false -- ปลดล็อคสถานะ เพื่อเตรียมรันรอบหน้า
+                        
+                        -- หยุด Record และเซฟอัตโนมัติ
+                        if Options.RecordMacro and Options.RecordMacro.Value then
+                            Options.RecordMacro:SetValue(false)
+                            Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
+                        end
+                        
+                        -- ยิง Auto Replay
+                        if Options.AutoReplay and Options.AutoReplay.Value then
+                            task.wait(3) -- 🔥 เพิ่มดีเลย์ 3 วินาทีก่อนกด Replay (หน่วงเวลาไว้ไม่ให้ไวเกินไป)
+                            ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                        end
                     end
-                    
-                    -- ยิง Auto Replay
-                    if Options.AutoReplay and Options.AutoReplay.Value then
-                        ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
-                    end
+                else
+                    isEndedScreenVisible = false 
                 end
             end
 
@@ -619,22 +622,28 @@ task.spawn(function()
                 elseif startGui:IsA("GuiObject") and startGui.Visible then
                     isStartScreenVisible = true
                 end
-            end
-            
-            if isStartScreenVisible then
-                local startBtn = startGui:FindFirstChild("Frame") and startGui.Frame:FindFirstChild("Labels") and startGui.Frame.Labels:FindFirstChild("startbutton")
-                if startBtn and startBtn.Visible then
-                    -- ยิง Auto Ready
-                    if Options.AutoReady and Options.AutoReady.Value then
-                        ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                
+                local frame = startGui:FindFirstChild("Frame")
+                if isStartScreenVisible and frame and frame.Visible then
+                    local startBtn = frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
+                    if startBtn and startBtn.Visible then
+                        -- 🔥 เซฟตี้อีก 1 ชั้น: ถ้าเจอปุ่ม Start แปลว่าเริ่มตาใหม่ 100% บังคับปลดล็อคลูป Play ทันที
+                        hasPlayedThisRound = false 
+                        
+                        -- ยิง Auto Ready
+                        if Options.AutoReady and Options.AutoReady.Value then
+                            task.wait(2) -- 🔥 เพิ่มดีเลย์ 2 วินาทีก่อนกด Ready
+                            ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                        end
                     end
                 end
             end
 
             -- 🎯 3. ระบบ Infinite Loop: ถ้าสวิตช์ Play ยังเปิดอยู่ และตาใหม่เริ่มแล้ว ให้รันซ้ำ!
-            if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
+            if isReplaying and not hasPlayedThisRound then
                 -- ต้องมั่นใจว่าหน้าจอ End Game ไม่ได้ขวางอยู่
                 if not isEndedScreenVisible then
+                    task.wait(1.5) -- หน่วงเวลาตอนเริ่มเกมเล็กน้อย ให้โมเดล/UI โหลดเสร็จ 100% ก่อนรันสเต็ปแรก
                     hasPlayedThisRound = true
                     PlayMacroData()
                 end
