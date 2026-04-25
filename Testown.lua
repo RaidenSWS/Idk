@@ -67,23 +67,27 @@ local function GetCurrentWave()
     end)
     return currentWave
 end
-
-task.spawn(function()
-        -- ============================================================================== --
--- // ระบบ Auto Skip Wave (ทำงานแยกอิสระ)
+-- ============================================================================== --
+-- // 🔥 ระบบ Auto Skip Wave (Standalone & Reliable Edition)
 -- ============================================================================== --
 task.spawn(function()
-    while task.wait(0.5) do
-        -- ถ้ากดเปิดสวิตช์ Auto Skip ในเมนู UI
+    -- รอให้ระบบแสดงผลของเกม (UIDisplay) พร้อมทำงานก่อนเริ่มตรวจจับ
+    ReplicatedStorage:WaitForChild("UIDisplay")
+    
+    while task.wait(1) do -- ตรวจสอบทุก 1 วินาที เพื่อไม่ให้หนักเครื่องเกินไป
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                local autoBtn = LocalPlayer.PlayerGui.autoskip.auto
-                local color = autoBtn.BackgroundColor3
-                
-                -- 🔥 เช็คสี: ถ้าสีแดง (255, 93, 93) ค่า R จะมากกว่า G แปลว่ามัน Off อยู่
-                if color.R > color.G then
-                    -- ยิง Remote เปิดให้เป็นสีเขียวทันที
-                    EventFolder:WaitForChild("waveSkip"):FireServer(true)
+                local autoskipGui = LocalPlayer.PlayerGui:FindFirstChild("autoskip")
+                if autoskipGui and autoskipGui:FindFirstChild("auto") then
+                    local btn = autoskipGui.auto
+                    local color = btn.BackgroundColor3
+                    
+                    -- ตรวจจับสีแดง [255, 93, 93] แปลว่าสถานะคือ OFF
+                    -- เราเช็คว่าถ้าค่าสีแดง (R) มากกว่าสีเขียว (G) ชัดเจน แสดงว่ายังปิดอยู่
+                    if color.R > color.G then
+                        -- ยิง Remote เพื่อสั่งเปิด Auto Skip ทันที
+                        EventFolder:WaitForChild("waveSkip"):FireServer(true)
+                    end
                 end
             end)
         end
