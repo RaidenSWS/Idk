@@ -246,8 +246,9 @@ local function RecordAction(actionType, unitName, posCf, exactTime)
 end
 
 -- การดักฟัง RemoteEvent แทนการมองหน้าจอ
+-- การดักฟัง RemoteEvent แบบซ่อนตัว 100% (Undetected Hook)
 local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
     
     if isRecording and method == "FireServer" then
@@ -286,7 +287,7 @@ oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
     end
     
     return oldNamecall(self, ...)
-end)
+end))
 
 local function StartRecordingProcess()
     if PlayToggle.Value then PlayToggle:SetValue(false) end
