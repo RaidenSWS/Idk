@@ -384,6 +384,7 @@ local function PlayMacroData()
                     task.wait(0.1)
                 end
             end
+        end
         
         isReplaying = false
         PlayToggle:SetValue(false)
