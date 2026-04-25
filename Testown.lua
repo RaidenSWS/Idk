@@ -571,46 +571,70 @@ local function PlayMacroData()
 end
 
 local hasPlayedThisRound = false
-
 -- ============================================================================== --
 -- // 🔥 ระบบ Automation Core (Auto Replay / Auto Ready / Smart Loop / Auto Save)
 -- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            -- 1. ตรวจจับหน้าจอตอนจบเกม (Auto Replay & Auto Save)
+            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม (Auto Replay & Auto Save)
             local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
-            local replayBtn = gameEndedGui and gameEndedGui.Frame:FindFirstChild("replay")
+            local isEndedScreenVisible = false
             
-            if replayBtn and replayBtn.Visible then
-                hasPlayedThisRound = false -- รีเซ็ตสถานะเตรียมรันรอบหน้า
-                
-                -- หยุด Record และเซฟอัตโนมัติ
-                if Options.RecordMacro and Options.RecordMacro.Value then
-                    Options.RecordMacro:SetValue(false)
-                    Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
+            -- เช็คชัวร์ๆ ว่ากล่องหลักมันถูก "เปิด (Enabled/Visible)" อยู่จริงๆ ไม่ใช่แค่ซ่อนไว้
+            if gameEndedGui then
+                if gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled then
+                    isEndedScreenVisible = true
+                elseif gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible then
+                    isEndedScreenVisible = true
                 end
+            end
+            
+            if isEndedScreenVisible then
+                local replayBtn = gameEndedGui:FindFirstChild("Frame") and gameEndedGui.Frame:FindFirstChild("replay")
                 
-                -- ยิง Auto Replay
-                if Options.AutoReplay and Options.AutoReplay.Value then
-                    ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                if replayBtn and replayBtn.Visible then
+                    hasPlayedThisRound = false -- รีเซ็ตสถานะเตรียมรันรอบหน้า
+                    
+                    -- หยุด Record และเซฟอัตโนมัติ
+                    if Options.RecordMacro and Options.RecordMacro.Value then
+                        Options.RecordMacro:SetValue(false)
+                        Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
+                    end
+                    
+                    -- ยิง Auto Replay
+                    if Options.AutoReplay and Options.AutoReplay.Value then
+                        ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                    end
                 end
             end
 
-            -- 2. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready & วนลูป Play)
+            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready & วนลูป Play)
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
-            local startBtn = startGui and startGui.Frame.Labels:FindFirstChild("startbutton")
+            local isStartScreenVisible = false
             
-            if startBtn and startBtn.Visible then
-                -- ยิง Auto Ready
-                if Options.AutoReady and Options.AutoReady.Value then
-                    ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+            if startGui then
+                if startGui:IsA("ScreenGui") and startGui.Enabled then
+                    isStartScreenVisible = true
+                elseif startGui:IsA("GuiObject") and startGui.Visible then
+                    isStartScreenVisible = true
+                end
+            end
+            
+            if isStartScreenVisible then
+                local startBtn = startGui:FindFirstChild("Frame") and startGui.Frame:FindFirstChild("Labels") and startGui.Frame.Labels:FindFirstChild("startbutton")
+                if startBtn and startBtn.Visible then
+                    -- ยิง Auto Ready
+                    if Options.AutoReady and Options.AutoReady.Value then
+                        ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                    end
                 end
             end
 
-            -- 3. ระบบ Infinite Loop: ถ้าสวิตช์ Play ยังเปิดอยู่ และตาใหม่เริ่มแล้ว ให้รันซ้ำ!
+            -- 🎯 3. ระบบ Infinite Loop: ถ้าสวิตช์ Play ยังเปิดอยู่ และตาใหม่เริ่มแล้ว ให้รันซ้ำ!
             if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
-                if not (replayBtn and replayBtn.Visible) then
+                -- ต้องมั่นใจว่าหน้าจอ End Game ไม่ได้ขวางอยู่
+                if not isEndedScreenVisible then
                     hasPlayedThisRound = true
                     PlayMacroData()
                 end
@@ -618,10 +642,6 @@ task.spawn(function()
         end)
     end
 end)
-
--- ============================================================================== --
--- // 8. เชื่อมปุ่ม (Event Handlers)
--- ============================================================================== --
 
 -- ============================================================================== --
 -- // 8. เชื่อมปุ่ม (Event Handlers)
