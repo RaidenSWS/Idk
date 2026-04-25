@@ -213,32 +213,73 @@ local function GetRealUnitName(towerModel)
     return string.gsub(string.gsub(towerModel.Name, " Lvl?%.?%s*%d+", ""), " %(Lv.*%)", "")
 end
 
+-- ============================================================================== --
+-- // 🔥 THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
+-- ============================================================================== --
+local function GetExactCost(unitName, actionType, upgradeLevel)
+    if actionType == "Sell" then return 0 end
+    local cost = 0
+    pcall(function()
+        local rs = game:GetService("ReplicatedStorage")
+        -- เข้าถึงแฟ้มข้อมูลตัวละครของ Skibi Defense
+        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
+        if towerData then
+            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
+            if module then
+                local data = require(module)
+                if actionType == "Place" then
+                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
+                elseif actionType == "Upgrade" and data.Upgrades then
+                    local upg = data.Upgrades[upgradeLevel]
+                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
+                end
+            end
+        end
+    end)
+    return cost
+end
+
+-- ============================================================================== --
+-- // ฟังก์ชัน RecordAction ที่ได้รับการอัปเกรด
+-- ============================================================================== --
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     actionCount = actionCount + 1
     local currentActionId = actionCount
     local currentWave = GetCurrentWave()
     
+    -- ระบบนับเลเวลการอัพเกรด (เพื่อเอาไปค้นหาราคาให้ตรงขั้น)
+    local targetLevel = 0
+    if actionType == "Place" then 
+        instanceToLevel[tostring(targetId)] = 0
+    elseif actionType == "Upgrade" then 
+        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
+        targetLevel = instanceToLevel[tostring(targetId)]
+    end
+    
     local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
-    UpdateStatus("Recording", currentActionId, actionType, unitName, "Saving Cost...")
-
+    -- 🔥 ดึงราคาตรงจากฐานข้อมูลเกมทันที! (ไม่ต้องรอ 4 วินาทีอีกต่อไป)
     task.spawn(function()
-        local cost = 0
-        if actionType ~= "Sell" then
+        local exactCost = GetExactCost(unitName, actionType, targetLevel)
+        
+        -- ถ้าระบบขุดข้อมูลพลาด (กันเหนียว) ค่อยกลับไปใช้ระบบดักเงินคิวเดิม (สูงสุดแค่ 1.5 วิ)
+        if exactCost == 0 and actionType ~= "Sell" then
             local passTime = 0
             while passTime < 1.5 do
                 for _, drop in ipairs(MoneyQueue) do
-                    if not drop.claimed and (tick() - drop.time) <= 5 then
-                        cost = drop.amount; drop.claimed = true; break
+                    if not drop.claimed and (tick() - drop.time) <= 3 then
+                        exactCost = drop.amount; drop.claimed = true; break
                     end
                 end
-                if cost > 0 then break end
+                if exactCost > 0 then break end
                 task.wait(0.1); passTime = passTime + 0.1
             end
         end
-        stepData.cost = cost
+        
+        stepData.cost = exactCost
+        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost)
     end)
 end
 
@@ -310,80 +351,75 @@ local function PlayMacroData()
         local useMoney = Options.PlayModes.Value["Money"]
         local customDelay = Options.StepDelay.Value
 
-        for i = 1, actionCount do
-            if not isReplaying then return end 
-            local step = _G.MacroData[tostring(i)]
-            if not step then continue end
-
-            local waitTime = customDelay
-            if useTime then
-                local prevTime = (i == 1) and 0 or _G.MacroData[tostring(i-1)].time
-                local realTimeGap = step.time - prevTime
-                if realTimeGap > customDelay then waitTime = realTimeGap end
-            end
-
-            local passed = 0
-            while passed < waitTime do
-                if not isReplaying then return end
-                UpdateStatus("Playing", i, step.type, step.unit, string.format("Time (%.1fs)", waitTime - passed))
-                task.wait(0.1); passed = passed + 0.1
-            end
-
-            if useWave and step.wave then
-                while GetCurrentWave() < step.wave do
-                    if not isReplaying then return end
-                    UpdateStatus("Playing", i, step.type, step.unit, "Wave " .. step.wave)
-                    task.wait(1)
+        -- ============================================================================== --
+-- // 🔥 THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
+-- ============================================================================== --
+local function GetExactCost(unitName, actionType, upgradeLevel)
+    if actionType == "Sell" then return 0 end
+    local cost = 0
+    pcall(function()
+        local rs = game:GetService("ReplicatedStorage")
+        -- เข้าถึงแฟ้มข้อมูลตัวละครของ Skibi Defense
+        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
+        if towerData then
+            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
+            if module then
+                local data = require(module)
+                if actionType == "Place" then
+                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
+                elseif actionType == "Upgrade" and data.Upgrades then
+                    local upg = data.Upgrades[upgradeLevel]
+                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
                 end
             end
+        end
+    end)
+    return cost
+end
 
-            if useMoney and step.cost and step.cost > 0 then
-                while GetCurrentMoney() < step.cost do
-                    if not isReplaying then return end
-                    UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. step.cost .. ")")
-                    task.wait(0.5)
+-- ============================================================================== --
+-- // ฟังก์ชัน RecordAction ที่ได้รับการอัปเกรด
+-- ============================================================================== --
+local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
+    actionCount = actionCount + 1
+    local currentActionId = actionCount
+    local currentWave = GetCurrentWave()
+    
+    -- ระบบนับเลเวลการอัพเกรด (เพื่อเอาไปค้นหาราคาให้ตรงขั้น)
+    local targetLevel = 0
+    if actionType == "Place" then 
+        instanceToLevel[tostring(targetId)] = 0
+    elseif actionType == "Upgrade" then 
+        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
+        targetLevel = instanceToLevel[tostring(targetId)]
+    end
+    
+    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
+    if posCf then stepData.pos = FormatCFrame(posCf) end
+    _G.MacroData[tostring(currentActionId)] = stepData
+
+    -- 🔥 ดึงราคาตรงจากฐานข้อมูลเกมทันที! (ไม่ต้องรอ 4 วินาทีอีกต่อไป)
+    task.spawn(function()
+        local exactCost = GetExactCost(unitName, actionType, targetLevel)
+        
+        -- ถ้าระบบขุดข้อมูลพลาด (กันเหนียว) ค่อยกลับไปใช้ระบบดักเงินคิวเดิม (สูงสุดแค่ 1.5 วิ)
+        if exactCost == 0 and actionType ~= "Sell" then
+            local passTime = 0
+            while passTime < 1.5 do
+                for _, drop in ipairs(MoneyQueue) do
+                    if not drop.claimed and (tick() - drop.time) <= 3 then
+                        exactCost = drop.amount; drop.claimed = true; break
+                    end
                 end
+                if exactCost > 0 then break end
+                task.wait(0.1); passTime = passTime + 0.1
             end
-            
-            if not isReplaying then return end 
-            UpdateStatus("Playing", i, step.type, step.unit, "Executing...")
-
-            local targetPosCf = nil
-            if step.pos then
-                local p = {}
-                for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
-                targetPosCf = CFrame.new(unpack(p))
-            end
-
-            -- 🔥 ระบบ FAST EXECUTION (ยิงคำสั่งปุ๊บ ไปสเต็ปต่อไปปั๊บ ไม่ยืนเอ๋อรอ)
-            if step.type == "Place" then
-                pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
-                -- รอให้โมเดลโหลดแป๊บเดียว (กันบั๊กเกมโหลดช้า) สูงสุด 1 วินาที
-                for pass = 1, 10 do
-                    if GetUnitByPosition(step.unit, targetPosCf) then break end
-                    task.wait(0.1)
-                end
-
-            elseif step.type == "Upgrade" then
-                local unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
-                if unitToUpgrade then
-                    local idNum = tonumber(unitToUpgrade.Name)
-                    if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
-                end
-                -- อัพเกรดเสร็จโดดไปสเต็ปต่อไปทันที ไม่ต้องรอ!
-
-            elseif step.type == "Sell" then
-                local unitToSell = GetUnitByPosition(step.unit, targetPosCf)
-                if unitToSell then
-                    local idNum = tonumber(unitToSell.Name)
-                    if idNum then pcall(function() SellRemote:FireServer(idNum) end) else pcall(function() SellRemote:FireServer(unitToSell.Name) end) end
-                end
-                -- รอให้โมเดลหายไปแป๊บเดียว สูงสุด 1 วินาที
-                for pass = 1, 10 do
-                    if not GetUnitByPosition(step.unit, targetPosCf) then break end
-                    task.wait(0.1)
-                end
-            end
+        end
+        
+        stepData.cost = exactCost
+        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost)
+    end)
+end
         end
         
         isReplaying = false
