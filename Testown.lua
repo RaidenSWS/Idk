@@ -245,7 +245,6 @@ local function RecordAction(actionType, unitName, posCf, exactTime)
     end)
 end
 
--- การดักฟัง RemoteEvent แทนการมองหน้าจอ
 -- การดักฟัง RemoteEvent แบบซ่อนตัว 100% (Undetected Hook)
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
