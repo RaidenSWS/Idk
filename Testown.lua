@@ -1,7 +1,7 @@
 -- ============================================================================== --
--- // SKIBI DEFENSE - FLUENT MACRO EDITION V23 (THE ULTIMATE)
+-- // SKIBI DEFENSE - FLUENT MACRO EDITION V24 (REMOTE INTERCEPTOR)
 -- // UI Design: All-in-One Main Tab + Safe Record System
--- // Logic: Oracle Data Miner (0s Cost) + Fast Execution + Anti-Lag Playback
+-- // Logic: Namecall Interceptor (กันข้ามสเต็ป 100%) + Oracle Data Miner + Fast Exec
 -- ============================================================================== --
 
 local Players = game:GetService("Players")
@@ -20,8 +20,8 @@ local SellRemote = EventFolder:WaitForChild("RemoveTower")
 -- ============================================================================== --
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local Window = Fluent:CreateWindow({
-    Title = "Skibi Macro V23",
-    SubTitle = "Ultimate Edition",
+    Title = "Skibi Macro V24",
+    SubTitle = "Interceptor Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(500, 480),
     Acrylic = false,
@@ -131,29 +131,18 @@ local isRecording = false
 local isReplaying = false
 local recordStartTime = 0
 local actionCount = 0
-local instanceToId = {}
-local posToId = {}
 local instanceToLevel = {}
-local activeConnections = {}
-
-local function ClearConnections()
-    for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
-    activeConnections = {}
-end
 
 local function WipeRecordingState()
     _G.MacroData = {}
     actionCount = 0
-    instanceToId = {}
-    posToId = {}
     instanceToLevel = {}
     for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end 
     recordStartTime = tick()
-    ClearConnections()
 end
 
 -- ============================================================================== --
--- // 🔥 4. THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
+-- // 🔥 4. THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม
 -- ============================================================================== --
 local function GetExactCost(unitName, actionType, upgradeLevel)
     if actionType == "Sell" then return 0 end
@@ -180,30 +169,18 @@ end
 -- ============================================================================== --
 -- // 5. สร้าง UI หน้า Main 
 -- ============================================================================== --
-local StatusPara = Tabs.Main:AddParagraph({
-    Title = "Macro Status: None",
-    Content = "Action: -\nType: -\nUnit: -\nWaiting for: -"
-})
-
+local StatusPara = Tabs.Main:AddParagraph({ Title = "Macro Status: None", Content = "Action: -\nType: -\nUnit: -\nWaiting for: -" })
 local function UpdateStatus(status, action, actType, unit, waiting)
     StatusPara:SetTitle("Macro Status: " .. (status or "None"))
-    StatusPara:SetDesc(string.format("Action: %s\nType: %s\nUnit: %s\nWaiting for: %s",
-        tostring(action or "-"),
-        tostring(actType or "-"),
-        tostring(unit or "-"),
-        tostring(waiting or "-")
-    ))
+    StatusPara:SetDesc(string.format("Action: %s\nType: %s\nUnit: %s\nWaiting for: %s", tostring(action or "-"), tostring(actType or "-"), tostring(unit or "-"), tostring(waiting or "-")))
 end
 
 Tabs.Main:AddSection("File & Profiles")
-
 if not isfolder("SkibiMacroData") then makefolder("SkibiMacroData") end
 
 local function GetMacroFiles()
     local files = {}
-    for _, v in ipairs(listfiles("SkibiMacroData")) do
-        table.insert(files, string.match(v, "([^/\\]+)%.json$") or v)
-    end
+    for _, v in ipairs(listfiles("SkibiMacroData")) do table.insert(files, string.match(v, "([^/\\]+)%.json$") or v) end
     if #files == 0 then table.insert(files, "None") end
     return files
 end
@@ -221,51 +198,36 @@ Tabs.Main:AddButton({ Title = "Create new macro (Save)", Callback = function()
 end})
 
 Tabs.Main:AddSection("Macro Controls")
-
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
 
-Tabs.Main:AddSlider("StepDelay", {
-    Title = "Step Delay",
-    Description = "ดีเลย์ขั้นต่ำระหว่าง Playback",
-    Default = 0.2,
-    Min = 0.1,
-    Max = 5,
-    Rounding = 1
-})
-
-local PlayModes = Tabs.Main:AddDropdown("PlayModes", {
-    Title = "Play Modes",
-    Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป",
-    Values = {"Time", "Wave", "Money"},
-    Multi = true,
-    Default = {"Wave", "Money"},
-})
+Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Description = "ดีเลย์ขั้นต่ำระหว่าง Playback", Default = 0.2, Min = 0.1, Max = 5, Rounding = 1 })
+local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record)
+-- // 🔥 6. ลอจิกการอัด (Record) - Remote Interceptor (ดักฟัง 0.00 วิ)
 -- ============================================================================== --
-local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
+local function RecordAction(actionType, unitName, posCf, exactTime)
     actionCount = actionCount + 1
     local currentActionId = actionCount
     local currentWave = GetCurrentWave()
     
     local targetLevel = 0
+    local posKey = posCf and GetPosKey(posCf.Position) or "UNKNOWN"
+    
     if actionType == "Place" then 
-        instanceToLevel[tostring(targetId)] = 0
+        instanceToLevel[posKey] = 0
     elseif actionType == "Upgrade" then 
-        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
-        targetLevel = instanceToLevel[tostring(targetId)]
+        instanceToLevel[posKey] = (instanceToLevel[posKey] or 0) + 1 
+        targetLevel = instanceToLevel[posKey]
     end
     
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
+    local stepData = { type = actionType, time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, targetLevel)
-        
-        -- Backup Queue ถ้าระบบขุดข้อมูลพลาด
         if exactCost == 0 and actionType ~= "Sell" then
             local passTime = 0
             while passTime < 1.5 do
@@ -278,69 +240,60 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
                 task.wait(0.1); passTime = passTime + 0.1
             end
         end
-        
         stepData.cost = exactCost
         UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost)
     end)
 end
 
-local function StartObserving()
-    local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
-    if not targetFolder then return end
-
-    local addConn = targetFolder.ChildAdded:Connect(function(newTower)
-        if not isRecording or not newTower:IsA("Model") then return end
-        local exactTime = tick() - recordStartTime 
-        task.wait(0.05) 
-        
-        local posCf = newTower.PrimaryPart and newTower.PrimaryPart.CFrame or newTower:GetModelCFrame()
-        local posKey = GetPosKey(posCf.Position)
-        local unitName = GetRealUnitName(newTower)
-        local targetId = newTower.Name
-        
-        if posToId[posKey] then
-            local oldId = posToId[posKey]
-            instanceToId[newTower] = oldId
-            RecordAction("Upgrade", oldId, posCf, unitName, exactTime)
-        else
-            posToId[posKey] = targetId
-            instanceToId[newTower] = targetId
-            RecordAction("Place", targetId, posCf, unitName, exactTime)
-        end
-    end)
+-- การดักฟัง RemoteEvent แทนการมองหน้าจอ
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
     
-    local remConn = targetFolder.ChildRemoved:Connect(function(oldTower)
-        if not isRecording then return end
-        local exactTime = tick() - recordStartTime 
-        local targetId = instanceToId[oldTower]
+    if isRecording and method == "FireServer" then
+        local args = {...}
         
-        local posCf = oldTower.PrimaryPart and oldTower.PrimaryPart.CFrame or oldTower:GetModelCFrame()
-        local posKey = GetPosKey(posCf.Position)
-        
-        if targetId then
-            task.delay(0.4, function()
-                local isUpgraded = false
-                for inst, id in pairs(instanceToId) do if inst.Parent ~= nil and id == targetId then isUpgraded = true break end end
-                if not isUpgraded then
-                    RecordAction("Sell", targetId, posCf, GetRealUnitName(oldTower), exactTime)
-                    posToId[posKey] = nil
+        if self == PlaceRemote then
+            local exactTime = tick() - recordStartTime
+            local unitName = args[1]
+            local posCf = args[2]
+            task.spawn(function() RecordAction("Place", unitName, posCf, exactTime) end)
+            
+        elseif self == UpgradeRemote then
+            local exactTime = tick() - recordStartTime
+            local targetId = tostring(args[1])
+            task.spawn(function()
+                local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+                local unit = targetFolder and targetFolder:FindFirstChild(targetId)
+                if unit then
+                    local posCf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
+                    RecordAction("Upgrade", GetRealUnitName(unit), posCf, exactTime)
                 end
-                instanceToId[oldTower] = nil
+            end)
+            
+        elseif self == SellRemote then
+            local exactTime = tick() - recordStartTime
+            local targetId = tostring(args[1])
+            task.spawn(function()
+                local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+                local unit = targetFolder and targetFolder:FindFirstChild(targetId)
+                if unit then
+                    local posCf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
+                    RecordAction("Sell", GetRealUnitName(unit), posCf, exactTime)
+                end
             end)
         end
-    end)
+    end
     
-    table.insert(activeConnections, addConn)
-    table.insert(activeConnections, remConn)
-end
+    return oldNamecall(self, ...)
+end)
 
 local function StartRecordingProcess()
     if PlayToggle.Value then PlayToggle:SetValue(false) end
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ล้างข้อมูลเก่าแล้ว)", Duration = 3 })
-    StartObserving()
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! ระบบดักจับเปิดใช้งานแล้ว", Duration = 3 })
 end
 
 -- ============================================================================== --
@@ -362,10 +315,7 @@ local function PlayMacroData()
             if useTime then
                 local prevTime = 0
                 for j = i - 1, 1, -1 do
-                    if _G.MacroData[tostring(j)] then
-                        prevTime = _G.MacroData[tostring(j)].time
-                        break
-                    end
+                    if _G.MacroData[tostring(j)] then prevTime = _G.MacroData[tostring(j)].time; break end
                 end
                 local realTimeGap = step.time - prevTime
                 if realTimeGap > customDelay then waitTime = realTimeGap end
@@ -410,7 +360,7 @@ local function PlayMacroData()
                 local attempts = 0
                 repeat
                     pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
-                    task.wait(0.3)
+                    task.wait(0.2)
                     if GetUnitByPosition(step.unit, targetPosCf) then isPlaced = true end
                     attempts = attempts + 1
                 until isPlaced or attempts >= 15 or not isReplaying
@@ -424,7 +374,7 @@ local function PlayMacroData()
                         local idNum = tonumber(unitToUpgrade.Name)
                         if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
                     end
-                    task.wait(0.3)
+                    task.wait(0.2)
                     attempts = attempts + 1
                 until GetCurrentMoney() < preMoney or attempts >= 15 or not isReplaying
 
@@ -436,7 +386,7 @@ local function PlayMacroData()
                         local idNum = tonumber(unitToSell.Name)
                         if idNum then pcall(function() SellRemote:FireServer(idNum) end) else pcall(function() SellRemote:FireServer(unitToSell.Name) end) end
                     end
-                    task.wait(0.3)
+                    task.wait(0.2)
                     attempts = attempts + 1
                 until GetUnitByPosition(step.unit, targetPosCf) == nil or attempts >= 15 or not isReplaying
             end
@@ -482,7 +432,6 @@ RecordToggle:OnChanged(function(val)
     else
         if isRecording then
             isRecording = false
-            ClearConnections()
             UpdateStatus("Idle", "-", "-", "-", "-")
             Fluent:Notify({ Title = "Stopped", Content = "หยุดอัดมาโครแล้ว", Duration = 3 })
             
