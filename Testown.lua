@@ -1,7 +1,7 @@
 -- ============================================================================== --
--- // SKIBI DEFENSE - FLUENT MACRO EDITION V21
+-- // SKIBI DEFENSE - FLUENT MACRO EDITION V23 (THE ULTIMATE)
 -- // UI Design: All-in-One Main Tab + Safe Record System
--- // Logic: Perfect Cost V17 + ASTD Magnitude Checking + Smart Overwrite Dialog
+-- // Logic: Oracle Data Miner (0s Cost) + Fast Execution + Anti-Lag Playback
 -- ============================================================================== --
 
 local Players = game:GetService("Players")
@@ -20,8 +20,8 @@ local SellRemote = EventFolder:WaitForChild("RemoveTower")
 -- ============================================================================== --
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local Window = Fluent:CreateWindow({
-    Title = "Skibi Macro V21",
-    SubTitle = "Fluent Edition",
+    Title = "Skibi Macro V23",
+    SubTitle = "Ultimate Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(500, 480),
     Acrylic = false,
@@ -36,7 +36,7 @@ local Tabs = {
 local Options = Fluent.Options
 
 -- ============================================================================== --
--- // 2. Helper Functions & Money Queue 
+-- // 2. Helper Functions & Backup Money Queue 
 -- ============================================================================== --
 local MoneyQueue = {}
 
@@ -80,7 +80,11 @@ task.spawn(function()
                 isDropping = false
             end
         elseif curMoney > lastMoney then
-            isDropping = false
+            if isDropping then
+                local totalSpent = preDropMoney - lastMoney
+                if totalSpent > 0 then table.insert(MoneyQueue, { amount = totalSpent, time = tick(), claimed = false }) end
+                isDropping = false
+            end
         end
         lastMoney = curMoney
     end
@@ -108,8 +112,73 @@ local function GetUnitByPosition(targetName, targetPosCf)
     return bestUnit
 end
 
+local function GetPosKey(pos) return string.format("%.1f_%.1f", pos.X, pos.Z) end
+local function FormatCFrame(cf)
+    local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:components()
+    return string.format("%f, %f, %f, %d, %d, %d, %d, %d, %d, %d, %d, %d", x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
+end
+local function GetRealUnitName(towerModel)
+    local sID = towerModel:GetAttribute("sID")
+    if sID and sID ~= "" then return sID end
+    return string.gsub(string.gsub(towerModel.Name, " Lvl?%.?%s*%d+", ""), " %(Lv.*%)", "")
+end
+
 -- ============================================================================== --
--- // 3. สร้าง UI หน้า Main (รวม File & Profile ในหน้าเดียว)
+-- // 3. ตัวแปรเก็บสถานะ Macro
+-- ============================================================================== --
+_G.MacroData = {}
+local isRecording = false
+local isReplaying = false
+local recordStartTime = 0
+local actionCount = 0
+local instanceToId = {}
+local posToId = {}
+local instanceToLevel = {}
+local activeConnections = {}
+
+local function ClearConnections()
+    for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
+    activeConnections = {}
+end
+
+local function WipeRecordingState()
+    _G.MacroData = {}
+    actionCount = 0
+    instanceToId = {}
+    posToId = {}
+    instanceToLevel = {}
+    for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end 
+    recordStartTime = tick()
+    ClearConnections()
+end
+
+-- ============================================================================== --
+-- // 🔥 4. THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
+-- ============================================================================== --
+local function GetExactCost(unitName, actionType, upgradeLevel)
+    if actionType == "Sell" then return 0 end
+    local cost = 0
+    pcall(function()
+        local rs = game:GetService("ReplicatedStorage")
+        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
+        if towerData then
+            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
+            if module then
+                local data = require(module)
+                if actionType == "Place" then
+                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
+                elseif actionType == "Upgrade" and data.Upgrades then
+                    local upg = data.Upgrades[upgradeLevel]
+                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
+                end
+            end
+        end
+    end)
+    return cost
+end
+
+-- ============================================================================== --
+-- // 5. สร้าง UI หน้า Main 
 -- ============================================================================== --
 local StatusPara = Tabs.Main:AddParagraph({
     Title = "Macro Status: None",
@@ -126,7 +195,6 @@ local function UpdateStatus(status, action, actType, unit, waiting)
     ))
 end
 
--- [ ส่วนจัดการไฟล์ ]
 Tabs.Main:AddSection("File & Profiles")
 
 if not isfolder("SkibiMacroData") then makefolder("SkibiMacroData") end
@@ -152,7 +220,6 @@ Tabs.Main:AddButton({ Title = "Create new macro (Save)", Callback = function()
     Fluent:Notify({ Title = "Saved", Content = "สร้าง/บันทึกไฟล์ " .. fName .. ".json สำเร็จ!", Duration = 3 })
 end})
 
--- [ ส่วนควบคุม ]
 Tabs.Main:AddSection("Macro Controls")
 
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
@@ -172,82 +239,17 @@ local PlayModes = Tabs.Main:AddDropdown("PlayModes", {
     Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป",
     Values = {"Time", "Wave", "Money"},
     Multi = true,
-    Default = {"Time", "Wave", "Money"},
+    Default = {"Wave", "Money"},
 })
 
 -- ============================================================================== --
--- // 4. Macro Logic (Record & Play)
--- ============================================================================== --
-_G.MacroData = {}
-local isRecording = false
-local isReplaying = false
-local recordStartTime = 0
-local actionCount = 0
-local instanceToId, posToId, instanceToLevel, activeConnections = {}, {}, {}, {}
-
-local function ClearConnections()
-    for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
-    activeConnections = {}
-end
-
--- 🔥 ล้างสมองมาโคร (Clear Memory) เพื่อแก้บั๊กจำค่าเก่า
-local function WipeRecordingState()
-    _G.MacroData = {}
-    actionCount = 0
-    instanceToId = {}
-    posToId = {}
-    instanceToLevel = {}
-    for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end -- เคลียร์คิวเงินเก่าทิ้งให้เกลี้ยง
-    recordStartTime = tick()
-    ClearConnections()
-end
-
-local function GetPosKey(pos) return string.format("%.1f_%.1f", pos.X, pos.Z) end
-local function FormatCFrame(cf)
-    local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:components()
-    return string.format("%f, %f, %f, %d, %d, %d, %d, %d, %d, %d, %d, %d", x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
-end
-local function GetRealUnitName(towerModel)
-    local sID = towerModel:GetAttribute("sID")
-    if sID and sID ~= "" then return sID end
-    return string.gsub(string.gsub(towerModel.Name, " Lvl?%.?%s*%d+", ""), " %(Lv.*%)", "")
-end
-
--- ============================================================================== --
--- // 🔥 THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
--- ============================================================================== --
-local function GetExactCost(unitName, actionType, upgradeLevel)
-    if actionType == "Sell" then return 0 end
-    local cost = 0
-    pcall(function()
-        local rs = game:GetService("ReplicatedStorage")
-        -- เข้าถึงแฟ้มข้อมูลตัวละครของ Skibi Defense
-        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
-        if towerData then
-            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
-            if module then
-                local data = require(module)
-                if actionType == "Place" then
-                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
-                elseif actionType == "Upgrade" and data.Upgrades then
-                    local upg = data.Upgrades[upgradeLevel]
-                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
-                end
-            end
-        end
-    end)
-    return cost
-end
-
--- ============================================================================== --
--- // ฟังก์ชัน RecordAction ที่ได้รับการอัปเกรด
+-- // 6. ลอจิกการอัด (Record)
 -- ============================================================================== --
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     actionCount = actionCount + 1
     local currentActionId = actionCount
     local currentWave = GetCurrentWave()
     
-    -- ระบบนับเลเวลการอัพเกรด (เพื่อเอาไปค้นหาราคาให้ตรงขั้น)
     local targetLevel = 0
     if actionType == "Place" then 
         instanceToLevel[tostring(targetId)] = 0
@@ -260,11 +262,10 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
-    -- 🔥 ดึงราคาตรงจากฐานข้อมูลเกมทันที! (ไม่ต้องรอ 4 วินาทีอีกต่อไป)
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, targetLevel)
         
-        -- ถ้าระบบขุดข้อมูลพลาด (กันเหนียว) ค่อยกลับไปใช้ระบบดักเงินคิวเดิม (สูงสุดแค่ 1.5 วิ)
+        -- Backup Queue ถ้าระบบขุดข้อมูลพลาด
         if exactCost == 0 and actionType ~= "Sell" then
             local passTime = 0
             while passTime < 1.5 do
@@ -313,7 +314,6 @@ local function StartObserving()
         local exactTime = tick() - recordStartTime 
         local targetId = instanceToId[oldTower]
         
-        -- 🔥 แก้ตรงนี้: ดึงพิกัดตอนขาย (posCf) มาเก็บไว้
         local posCf = oldTower.PrimaryPart and oldTower.PrimaryPart.CFrame or oldTower:GetModelCFrame()
         local posKey = GetPosKey(posCf.Position)
         
@@ -322,7 +322,6 @@ local function StartObserving()
                 local isUpgraded = false
                 for inst, id in pairs(instanceToId) do if inst.Parent ~= nil and id == targetId then isUpgraded = true break end end
                 if not isUpgraded then
-                    -- 🔥 เปลี่ยนจาก nil เป็น posCf ตรงช่องที่ 3
                     RecordAction("Sell", targetId, posCf, GetRealUnitName(oldTower), exactTime)
                     posToId[posKey] = nil
                 end
@@ -338,12 +337,15 @@ end
 local function StartRecordingProcess()
     if PlayToggle.Value then PlayToggle:SetValue(false) end
     isRecording = true
-    WipeRecordingState() -- 🔥 ล้างข้อมูลทั้งหมด
+    WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (หน่วยความจำถูกล้างใหม่หมด)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ล้างข้อมูลเก่าแล้ว)", Duration = 3 })
     StartObserving()
 end
 
+-- ============================================================================== --
+-- // 7. ลอจิกการเล่น (Play)
+-- ============================================================================== --
 local function PlayMacroData()
     task.spawn(function()
         local useTime = Options.PlayModes.Value["Time"]
@@ -351,75 +353,93 @@ local function PlayMacroData()
         local useMoney = Options.PlayModes.Value["Money"]
         local customDelay = Options.StepDelay.Value
 
-        -- ============================================================================== --
--- // 🔥 THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (แม่นยำ 100% ดีเลย์ 0 วินาที)
--- ============================================================================== --
-local function GetExactCost(unitName, actionType, upgradeLevel)
-    if actionType == "Sell" then return 0 end
-    local cost = 0
-    pcall(function()
-        local rs = game:GetService("ReplicatedStorage")
-        -- เข้าถึงแฟ้มข้อมูลตัวละครของ Skibi Defense
-        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
-        if towerData then
-            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
-            if module then
-                local data = require(module)
-                if actionType == "Place" then
-                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
-                elseif actionType == "Upgrade" and data.Upgrades then
-                    local upg = data.Upgrades[upgradeLevel]
-                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
-                end
-            end
-        end
-    end)
-    return cost
-end
+        for i = 1, actionCount do
+            if not isReplaying then return end 
+            local step = _G.MacroData[tostring(i)]
+            if not step then continue end
 
--- ============================================================================== --
--- // ฟังก์ชัน RecordAction ที่ได้รับการอัปเกรด
--- ============================================================================== --
-local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
-    actionCount = actionCount + 1
-    local currentActionId = actionCount
-    local currentWave = GetCurrentWave()
-    
-    -- ระบบนับเลเวลการอัพเกรด (เพื่อเอาไปค้นหาราคาให้ตรงขั้น)
-    local targetLevel = 0
-    if actionType == "Place" then 
-        instanceToLevel[tostring(targetId)] = 0
-    elseif actionType == "Upgrade" then 
-        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
-        targetLevel = instanceToLevel[tostring(targetId)]
-    end
-    
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
-    if posCf then stepData.pos = FormatCFrame(posCf) end
-    _G.MacroData[tostring(currentActionId)] = stepData
-
-    -- 🔥 ดึงราคาตรงจากฐานข้อมูลเกมทันที! (ไม่ต้องรอ 4 วินาทีอีกต่อไป)
-    task.spawn(function()
-        local exactCost = GetExactCost(unitName, actionType, targetLevel)
-        
-        -- ถ้าระบบขุดข้อมูลพลาด (กันเหนียว) ค่อยกลับไปใช้ระบบดักเงินคิวเดิม (สูงสุดแค่ 1.5 วิ)
-        if exactCost == 0 and actionType ~= "Sell" then
-            local passTime = 0
-            while passTime < 1.5 do
-                for _, drop in ipairs(MoneyQueue) do
-                    if not drop.claimed and (tick() - drop.time) <= 3 then
-                        exactCost = drop.amount; drop.claimed = true; break
+            local waitTime = customDelay
+            if useTime then
+                local prevTime = 0
+                for j = i - 1, 1, -1 do
+                    if _G.MacroData[tostring(j)] then
+                        prevTime = _G.MacroData[tostring(j)].time
+                        break
                     end
                 end
-                if exactCost > 0 then break end
-                task.wait(0.1); passTime = passTime + 0.1
+                local realTimeGap = step.time - prevTime
+                if realTimeGap > customDelay then waitTime = realTimeGap end
             end
-        end
-        
-        stepData.cost = exactCost
-        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost)
-    end)
-end
+
+            local passed = 0
+            while passed < waitTime do
+                if not isReplaying then return end
+                UpdateStatus("Playing", i, step.type, step.unit, string.format("Time (%.1fs)", waitTime - passed))
+                task.wait(0.1); passed = passed + 0.1
+            end
+
+            if useWave and step.wave then
+                while GetCurrentWave() < step.wave do
+                    if not isReplaying then return end
+                    UpdateStatus("Playing", i, step.type, step.unit, "Wave " .. step.wave)
+                    task.wait(1)
+                end
+            end
+
+            if useMoney and step.cost and step.cost > 0 then
+                while GetCurrentMoney() < step.cost do
+                    if not isReplaying then return end
+                    UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. step.cost .. ")")
+                    task.wait(0.5)
+                end
+            end
+            
+            if not isReplaying then return end 
+            UpdateStatus("Playing", i, step.type, step.unit, "Executing...")
+
+            local targetPosCf = nil
+            if step.pos then
+                local p = {}
+                for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
+                targetPosCf = CFrame.new(unpack(p))
+            end
+
+            -- 🔥 FAST EXECUTION & 15 ATTEMPTS ANTI-LAG
+            if step.type == "Place" then
+                local isPlaced = false
+                local attempts = 0
+                repeat
+                    pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
+                    task.wait(0.3)
+                    if GetUnitByPosition(step.unit, targetPosCf) then isPlaced = true end
+                    attempts = attempts + 1
+                until isPlaced or attempts >= 15 or not isReplaying
+
+            elseif step.type == "Upgrade" then
+                local attempts = 0
+                local preMoney = GetCurrentMoney()
+                repeat
+                    local unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
+                    if unitToUpgrade then
+                        local idNum = tonumber(unitToUpgrade.Name)
+                        if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
+                    end
+                    task.wait(0.3)
+                    attempts = attempts + 1
+                until GetCurrentMoney() < preMoney or attempts >= 15 or not isReplaying
+
+            elseif step.type == "Sell" then
+                local attempts = 0
+                repeat
+                    local unitToSell = GetUnitByPosition(step.unit, targetPosCf)
+                    if unitToSell then
+                        local idNum = tonumber(unitToSell.Name)
+                        if idNum then pcall(function() SellRemote:FireServer(idNum) end) else pcall(function() SellRemote:FireServer(unitToSell.Name) end) end
+                    end
+                    task.wait(0.3)
+                    attempts = attempts + 1
+                until GetUnitByPosition(step.unit, targetPosCf) == nil or attempts >= 15 or not isReplaying
+            end
         end
         
         isReplaying = false
@@ -430,14 +450,13 @@ end
 end
 
 -- ============================================================================== --
--- // 5. เชื่อมปุ่ม (Event Handlers)
+-- // 8. เชื่อมปุ่ม (Event Handlers)
 -- ============================================================================== --
 RecordToggle:OnChanged(function(val)
     if val then
         local fName = Options.MacroProfiles.Value
         local hasData = false
 
-        -- เช็คว่ามีไฟล์ที่เลือกอยู่ และในไฟล์มีข้อมูลไหม
         if fName ~= "None" and isfile("SkibiMacroData/" .. fName .. ".json") then
             local content = readfile("SkibiMacroData/" .. fName .. ".json")
             if content and content ~= "" then
@@ -448,35 +467,25 @@ RecordToggle:OnChanged(function(val)
             end
         end
 
-        -- ถ้าไฟล์มีข้อมูลอยู่แล้ว ให้เด้ง Popup ถามก่อน
         if hasData then
             Window:Dialog({
                 Title = "พบข้อมูลมาโครเดิม",
                 Content = "ไฟล์ '" .. fName .. "' มีข้อมูลอยู่แล้ว คุณต้องการอัดทับ (Overwrite) ข้อมูลเดิมหรือไม่?",
                 Buttons = {
-                    {
-                        Title = "ใช่ (อัดทับ)",
-                        Callback = function() StartRecordingProcess() end
-                    },
-                    {
-                        Title = "ยกเลิก",
-                        Callback = function() RecordToggle:SetValue(false) end
-                    }
+                    { Title = "ใช่ (อัดทับ)", Callback = function() StartRecordingProcess() end },
+                    { Title = "ยกเลิก", Callback = function() RecordToggle:SetValue(false) end }
                 }
             })
         else
-            -- ถ้าไฟล์ใหม่สะอาด หรือไม่ได้เลือกไฟล์ ให้เริ่มอัดเลย
             StartRecordingProcess()
         end
     else
-        -- ถ้ากดหยุดอัด
         if isRecording then
             isRecording = false
             ClearConnections()
             UpdateStatus("Idle", "-", "-", "-", "-")
             Fluent:Notify({ Title = "Stopped", Content = "หยุดอัดมาโครแล้ว", Duration = 3 })
             
-            -- Auto-Save ลงไฟล์ที่เลือกไว้อัตโนมัติ
             local fName = Options.MacroProfiles.Value
             if fName ~= "None" and actionCount > 0 then
                  writefile("SkibiMacroData/" .. fName .. ".json", HttpService:JSONEncode(_G.MacroData or {}))
