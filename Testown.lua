@@ -73,36 +73,36 @@ local function GetCurrentWave()
 end
 
 -- ============================================================================== --
--- // 🔥 ระบบ Auto Skip Wave (Standalone & Reliable Edition)
+-- // 🔥 ระบบ Auto Skip Wave (Smart Deep-Search & Force Fire)
 -- ============================================================================== --
+local cachedSkipBtn = nil
 task.spawn(function()
-    -- เอา WaitForChild("UIDisplay") ออกไปเลย เพื่อป้องกันสคริปต์ค้าง
-    while task.wait(1) do -- เช็คสถานะทุกๆ 1 วินาที
+    while task.wait(1) do 
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-                if playerGui then
-                    local autoskipGui = playerGui:FindFirstChild("autoskip")
-                    if autoskipGui then
-                        local btn = autoskipGui:FindFirstChild("auto")
-                        if btn then
-                            local color = btn.BackgroundColor3
-                            
-                            -- 🔥 เช็คสีแบบชัวร์ๆ
-                            -- สีแดง Off (255, 93, 93) ค่า R จะมากกว่า 0.8 และมากกว่า G
-                            -- สีเขียว On (139, 255, 139) ค่า G จะเต็ม 1.0 
-                            if color.R > color.G then
-                                -- ถ้าระบบตรวจเจอว่าปุ่มยังเป็นสีแดง (Off) ให้สั่งยิง Remote ทันที
-                                local eventFolder = ReplicatedStorage:FindFirstChild("Event")
-                                if eventFolder then
-                                    local waveSkipRemote = eventFolder:FindFirstChild("waveSkip")
-                                    if waveSkipRemote then
-                                        waveSkipRemote:FireServer(true)
-                                    end
-                                end
-                            end
+                -- 1. ถ้ายังไม่มีปุ่มในความจำ หรือเริ่มด่านใหม่ ให้ควานหาปุ่มแบบดำน้ำลึก
+                if not cachedSkipBtn or not cachedSkipBtn.Parent then
+                    for _, obj in ipairs(LocalPlayer.PlayerGui:GetDescendants()) do
+                        if string.lower(obj.Name) == "auto" and obj.Parent and string.lower(obj.Parent.Name) == "autoskip" then
+                            cachedSkipBtn = obj
+                            break
                         end
                     end
+                end
+                
+                -- ใช้ FindFirstChild ป้องกันสคริปต์ค้างถ้าเซิร์ฟเวอร์ยังโหลด Remote ไม่เสร็จ
+                local waveSkipRemote = EventFolder:FindFirstChild("waveSkip")
+                
+                -- 2. ถ้าเจอปุ่มบนจอ ให้เช็คสี
+                if cachedSkipBtn and waveSkipRemote then
+                    local color = cachedSkipBtn.BackgroundColor3
+                    if color.R > color.G then -- ถ้าค่าสีแดง (R) มากกว่าเขียว (G) แสดงว่า Off อยู่
+                        waveSkipRemote:FireServer(true)
+                    end
+                -- 3. ไม้ตาย: ถ้าหาปุ่ม UI บนจอไม่เจอจริงๆ บังคับยิง Remote ยัดเปิดไปเลย!
+                elseif waveSkipRemote then
+                    waveSkipRemote:FireServer(true)
+                    task.wait(2) -- หน่วงเวลาไว้หน่อย ป้องกันเกมเตะข้อหาสแปมคำสั่ง
                 end
             end)
         end
