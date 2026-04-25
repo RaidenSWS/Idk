@@ -76,16 +76,32 @@ end
 -- // 🔥 ระบบ Auto Skip Wave (Standalone & Reliable Edition)
 -- ============================================================================== --
 task.spawn(function()
-    ReplicatedStorage:WaitForChild("UIDisplay")
-    while task.wait(1) do 
+    -- เอา WaitForChild("UIDisplay") ออกไปเลย เพื่อป้องกันสคริปต์ค้าง
+    while task.wait(1) do -- เช็คสถานะทุกๆ 1 วินาที
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                local autoskipGui = LocalPlayer.PlayerGui:FindFirstChild("autoskip")
-                if autoskipGui and autoskipGui:FindFirstChild("auto") then
-                    local btn = autoskipGui.auto
-                    local color = btn.BackgroundColor3
-                    if color.R > color.G then
-                        EventFolder:WaitForChild("waveSkip"):FireServer(true)
+                local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
+                if playerGui then
+                    local autoskipGui = playerGui:FindFirstChild("autoskip")
+                    if autoskipGui then
+                        local btn = autoskipGui:FindFirstChild("auto")
+                        if btn then
+                            local color = btn.BackgroundColor3
+                            
+                            -- 🔥 เช็คสีแบบชัวร์ๆ
+                            -- สีแดง Off (255, 93, 93) ค่า R จะมากกว่า 0.8 และมากกว่า G
+                            -- สีเขียว On (139, 255, 139) ค่า G จะเต็ม 1.0 
+                            if color.R > color.G then
+                                -- ถ้าระบบตรวจเจอว่าปุ่มยังเป็นสีแดง (Off) ให้สั่งยิง Remote ทันที
+                                local eventFolder = ReplicatedStorage:FindFirstChild("Event")
+                                if eventFolder then
+                                    local waveSkipRemote = eventFolder:FindFirstChild("waveSkip")
+                                    if waveSkipRemote then
+                                        waveSkipRemote:FireServer(true)
+                                    end
+                                end
+                            end
+                        end
                     end
                 end
             end)
