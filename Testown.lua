@@ -131,14 +131,25 @@ local isRecording = false
 local isReplaying = false
 local recordStartTime = 0
 local actionCount = 0
+local instanceToId = {}
+local posToId = {}
 local instanceToLevel = {}
+local activeConnections = {}
+
+local function ClearConnections()
+    for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
+    activeConnections = {}
+end
 
 local function WipeRecordingState()
     _G.MacroData = {}
     actionCount = 0
+    instanceToId = {}
+    posToId = {}
     instanceToLevel = {}
     for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end 
     recordStartTime = tick()
+    ClearConnections()
 end
 
 -- ============================================================================== --
@@ -205,24 +216,22 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Description = "ดี�
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 🔥 6. ลอจิกการอัด (Record) - Remote Interceptor (ดักฟัง 0.00 วิ)
+-- // 6. ลอจิกการอัด (Record) - Observer Method (Safe 100% ไม่โดนแบน)
 -- ============================================================================== --
-local function RecordAction(actionType, unitName, posCf, exactTime)
+local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     actionCount = actionCount + 1
     local currentActionId = actionCount
     local currentWave = GetCurrentWave()
     
     local targetLevel = 0
-    local posKey = posCf and GetPosKey(posCf.Position) or "UNKNOWN"
-    
     if actionType == "Place" then 
-        instanceToLevel[posKey] = 0
+        instanceToLevel[tostring(targetId)] = 0
     elseif actionType == "Upgrade" then 
-        instanceToLevel[posKey] = (instanceToLevel[posKey] or 0) + 1 
-        targetLevel = instanceToLevel[posKey]
+        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
+        targetLevel = instanceToLevel[tostring(targetId)]
     end
     
-    local stepData = { type = actionType, time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
+    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0 }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
@@ -245,55 +254,63 @@ local function RecordAction(actionType, unitName, posCf, exactTime)
     end)
 end
 
--- การดักฟัง RemoteEvent แบบซ่อนตัว 100% (Undetected Hook)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    
-    if isRecording and method == "FireServer" then
-        local args = {...}
+local function StartObserving()
+    local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+    if not targetFolder then return end
+
+    local addConn = targetFolder.ChildAdded:Connect(function(newTower)
+        if not isRecording or not newTower:IsA("Model") then return end
+        local exactTime = tick() - recordStartTime 
+        task.wait(0.05) 
         
-        if self == PlaceRemote then
-            local exactTime = tick() - recordStartTime
-            local unitName = args[1]
-            local posCf = args[2]
-            task.spawn(function() RecordAction("Place", unitName, posCf, exactTime) end)
-            
-        elseif self == UpgradeRemote then
-            local exactTime = tick() - recordStartTime
-            local targetId = tostring(args[1])
-            task.spawn(function()
-                local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
-                local unit = targetFolder and targetFolder:FindFirstChild(targetId)
-                if unit then
-                    local posCf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
-                    RecordAction("Upgrade", GetRealUnitName(unit), posCf, exactTime)
+        local posCf = newTower.PrimaryPart and newTower.PrimaryPart.CFrame or newTower:GetModelCFrame()
+        local posKey = GetPosKey(posCf.Position)
+        local unitName = GetRealUnitName(newTower)
+        local targetId = newTower.Name
+        
+        if posToId[posKey] then
+            local oldId = posToId[posKey]
+            instanceToId[newTower] = oldId
+            RecordAction("Upgrade", oldId, posCf, unitName, exactTime)
+        else
+            posToId[posKey] = targetId
+            instanceToId[newTower] = targetId
+            RecordAction("Place", targetId, posCf, unitName, exactTime)
+        end
+    end)
+    
+    local remConn = targetFolder.ChildRemoved:Connect(function(oldTower)
+        if not isRecording then return end
+        local exactTime = tick() - recordStartTime 
+        local targetId = instanceToId[oldTower]
+        
+        local posCf = oldTower.PrimaryPart and oldTower.PrimaryPart.CFrame or oldTower:GetModelCFrame()
+        local posKey = GetPosKey(posCf.Position)
+        
+        if targetId then
+            task.delay(0.4, function()
+                local isUpgraded = false
+                for inst, id in pairs(instanceToId) do if inst.Parent ~= nil and id == targetId then isUpgraded = true break end end
+                if not isUpgraded then
+                    RecordAction("Sell", targetId, posCf, GetRealUnitName(oldTower), exactTime)
+                    posToId[posKey] = nil
                 end
-            end)
-            
-        elseif self == SellRemote then
-            local exactTime = tick() - recordStartTime
-            local targetId = tostring(args[1])
-            task.spawn(function()
-                local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
-                local unit = targetFolder and targetFolder:FindFirstChild(targetId)
-                if unit then
-                    local posCf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
-                    RecordAction("Sell", GetRealUnitName(unit), posCf, exactTime)
-                end
+                instanceToId[oldTower] = nil
             end)
         end
-    end
+    end)
     
-    return oldNamecall(self, ...)
-end))
+    table.insert(activeConnections, addConn)
+    table.insert(activeConnections, remConn)
+end
 
 local function StartRecordingProcess()
     if PlayToggle.Value then PlayToggle:SetValue(false) end
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! ระบบดักจับเปิดใช้งานแล้ว", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ปลอดภัย 100%)", Duration = 3 })
+    StartObserving()
 end
 
 -- ============================================================================== --
