@@ -208,6 +208,43 @@ Tabs.Main:AddButton({ Title = "Create new macro (Save)", Callback = function()
     Fluent:Notify({ Title = "Saved", Content = "สร้าง/บันทึกไฟล์ " .. fName .. ".json สำเร็จ!", Duration = 3 })
 end})
 
+Tabs.Main:AddButton({ Title = "Delete selected macro", Callback = function()
+    local fName = Options.MacroProfiles.Value
+    if fName == "None" or fName == "" then
+        Fluent:Notify({ Title = "Error", Content = "ไม่มีไฟล์ที่เลือกให้ลบ!", Duration = 3 })
+        return
+    end
+
+    if isfile("SkibiMacroData/" .. fName .. ".json") then
+        Window:Dialog({
+            Title = "ยืนยันการลบไฟล์",
+            Content = "คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์ '" .. fName .. "' ทิ้ง?\n(ลบแล้วไม่สามารถกู้คืนได้นะ)",
+            Buttons = {
+                {
+                    Title = "ใช่ (ลบเลย)",
+                    Callback = function()
+                        delfile("SkibiMacroData/" .. fName .. ".json")
+                        Fluent:Notify({ Title = "Deleted", Content = "ลบไฟล์ " .. fName .. " สำเร็จ!", Duration = 3 })
+                        
+                        -- รีเฟรชรายชื่อไฟล์ใน Dropdown ใหม่
+                        local files = GetMacroFiles()
+                        Options.MacroProfiles:SetValues(files)
+                        Options.MacroProfiles:SetValue(files[1]) -- เด้งกลับไปเลือกไฟล์แรกสุด
+                    end
+                },
+                {
+                    Title = "ยกเลิก",
+                    Callback = function()
+                        -- ไม่ทำอะไร ปิดหน้าต่างไป
+                    end
+                }
+            }
+        })
+    else
+        Fluent:Notify({ Title = "Error", Content = "หาไฟล์ไม่พบในระบบ!", Duration = 3 })
+    end
+end})
+
 Tabs.Main:AddSection("Macro Controls")
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
