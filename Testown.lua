@@ -693,3 +693,4 @@ PlayToggle:OnChanged(function(val)
         hasPlayedThisRound = false
         UpdateStatus("Idle", "-", "-", "-", "Stopped manually")
     end
+end)
