@@ -93,6 +93,11 @@ task.spawn(function()
         end
     end
 end)
+
+-- ============================================================================== --
+-- // ระบบเช็คเงิน (Money Queue)
+-- ============================================================================== --
+task.spawn(function()
     while not LocalPlayer:FindFirstChild("leaderstats") do task.wait(0.5) end
     local lastMoney = GetCurrentMoney()
     local isDropping = false
