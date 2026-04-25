@@ -344,6 +344,8 @@ end})
 
 Tabs.Main:AddSection("Macro Controls")
 local AutoSkipToggle = Tabs.Main:AddToggle("AutoSkip", {Title = "Auto Skip Wave", Default = false })
+local AutoReplayToggle = Tabs.Main:AddToggle("AutoReplay", {Title = "Auto Replay", Default = false })
+local AutoReadyToggle = Tabs.Main:AddToggle("AutoReady", {Title = "Auto Ready", Default = false })
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
 local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock", Description = "บังคับปรับสปีดเกมตลอดเวลา", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
@@ -560,12 +562,66 @@ local function PlayMacroData()
             end
         end
         
-        isReplaying = false
-        PlayToggle:SetValue(false)
-        UpdateStatus("Idle", "-", "-", "-", "Finished")
-        Fluent:Notify({ Title = "Complete", Content = "Macro เล่นจบแล้ว!", Duration = 5 })
+        -- [อัปเดต] ไม่ปิด Play ทิ้ง เพื่อรอวนลูปรอบหน้า
+        if isReplaying then
+            UpdateStatus("Completed", "-", "-", "-", "Waiting for next match...")
+            Fluent:Notify({ Title = "Complete", Content = "มาโครจบรอบนี้แล้ว! รอเริ่มเกมตาใหม่...", Duration = 5 })
+        end
     end)
 end
+
+local hasPlayedThisRound = false
+
+-- ============================================================================== --
+-- // 🔥 ระบบ Automation Core (Auto Replay / Auto Ready / Smart Loop / Auto Save)
+-- ============================================================================== --
+task.spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            -- 1. ตรวจจับหน้าจอตอนจบเกม (Auto Replay & Auto Save)
+            local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
+            local replayBtn = gameEndedGui and gameEndedGui.Frame:FindFirstChild("replay")
+            
+            if replayBtn and replayBtn.Visible then
+                hasPlayedThisRound = false -- รีเซ็ตสถานะเตรียมรันรอบหน้า
+                
+                -- หยุด Record และเซฟอัตโนมัติ
+                if Options.RecordMacro and Options.RecordMacro.Value then
+                    Options.RecordMacro:SetValue(false)
+                    Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
+                end
+                
+                -- ยิง Auto Replay
+                if Options.AutoReplay and Options.AutoReplay.Value then
+                    ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                end
+            end
+
+            -- 2. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready & วนลูป Play)
+            local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
+            local startBtn = startGui and startGui.Frame.Labels:FindFirstChild("startbutton")
+            
+            if startBtn and startBtn.Visible then
+                -- ยิง Auto Ready
+                if Options.AutoReady and Options.AutoReady.Value then
+                    ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                end
+            end
+
+            -- 3. ระบบ Infinite Loop: ถ้าสวิตช์ Play ยังเปิดอยู่ และตาใหม่เริ่มแล้ว ให้รันซ้ำ!
+            if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
+                if not (replayBtn and replayBtn.Visible) then
+                    hasPlayedThisRound = true
+                    PlayMacroData()
+                end
+            end
+        end)
+    end
+end)
+
+-- ============================================================================== --
+-- // 8. เชื่อมปุ่ม (Event Handlers)
+-- ============================================================================== --
 
 -- ============================================================================== --
 -- // 8. เชื่อมปุ่ม (Event Handlers)
@@ -630,9 +686,10 @@ PlayToggle:OnChanged(function(val)
         end
         
         isReplaying = true
+        hasPlayedThisRound = true -- บังคับเริ่มเล่นในรอบปัจจุบันทันที
         PlayMacroData()
     else
         isReplaying = false
+        hasPlayedThisRound = false
         UpdateStatus("Idle", "-", "-", "-", "Stopped manually")
     end
-end)
