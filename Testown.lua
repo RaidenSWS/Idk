@@ -109,6 +109,62 @@ task.spawn(function()
 end)
 
 -- ============================================================================== --
+-- // 🔥 ระบบ Auto Speed (Direct Remote Injector)
+-- ============================================================================== --
+task.spawn(function()
+    while task.wait(1) do 
+        if Options.AutoSpeed and Options.AutoSpeed.Value ~= "Off" then
+            pcall(function()
+                -- 1. แปลงค่าจาก Dropdown เป็นตัวเลขที่ต้องใช้ส่ง Remote
+                local desiredSpeed = 1
+                local val = Options.AutoSpeed.Value
+                if val == "Pause" then 
+                    desiredSpeed = 0
+                elseif string.match(val, "%d+") then
+                    desiredSpeed = tonumber(string.match(val, "%d+"))
+                end
+                
+                -- 2. เช็คความเร็วปัจจุบันบนจอ (จะได้ไม่ยิง Remote ซ้ำซากให้โดนเตะ)
+                local currentSpeed = -1 -- ตั้ง -1 ไว้เผื่อหา UI ไม่เจอ
+                local towersGui = LocalPlayer.PlayerGui:FindFirstChild("Towers")
+                if towersGui then
+                    local speedBtn = towersGui:FindFirstChild("speedButton")
+                    if speedBtn then
+                        -- เช็คปุ่ม Pause ว่าโชว์อยู่ไหม
+                        if speedBtn:FindFirstChild("Pause") and speedBtn.Pause.Visible then
+                            currentSpeed = 0
+                        else
+                            -- ไล่เช็คปุ่ม 1x ถึง 5x ว่าอันไหน Visible อยู่บนจอ
+                            for i = 1, 5 do
+                                local child = speedBtn:FindFirstChild(tostring(i).."x")
+                                if child and child:IsA("GuiObject") and child.Visible then
+                                    currentSpeed = i
+                                    break
+                                end
+                            end
+                        end
+                    end
+                end
+                
+                -- 3. ถ้าสปีดบนจอ ไม่ตรงกับที่เราล็อคไว้ ให้ยิง Remote "ตัวเลขนั้น" ไปตรงๆ เลย!
+                if currentSpeed ~= desiredSpeed and currentSpeed ~= -1 then
+                    local gameRs = ReplicatedStorage:FindFirstChild("Game")
+                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then
+                        gameRs.Speed.Change:FireServer(desiredSpeed)
+                    end
+                -- 4. ไม้ตาย: กรณี UI บั๊กหรือเกมซ่อนปุ่ม ยิงยัดไปเลยทุก 3 วินาที (กันเหนียว)
+                elseif currentSpeed == -1 then
+                    local gameRs = ReplicatedStorage:FindFirstChild("Game")
+                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then
+                        gameRs.Speed.Change:FireServer(desiredSpeed)
+                        task.wait(2)
+                    end
+                end
+            end)
+        end
+    end
+end)
+-- ============================================================================== --
 -- // ระบบเช็คเงิน (Money Queue)
 -- ============================================================================== --
 task.spawn(function()
@@ -290,6 +346,7 @@ Tabs.Main:AddSection("Macro Controls")
 local AutoSkipToggle = Tabs.Main:AddToggle("AutoSkip", {Title = "Auto Skip Wave", Default = false })
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
+local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock", Description = "บังคับปรับสปีดเกมตลอดเวลา", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
 
 Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Description = "ดีเลย์ขั้นต่ำระหว่าง Playback", Default = 0.2, Min = 0.1, Max = 5, Rounding = 1 })
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
