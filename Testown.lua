@@ -43,6 +43,15 @@ local function ParseMoney(val)
 end
 
 local function GetCurrentMoney()
+    -- 🔥 ดึงจาก UI ตามที่คุณแนะนำ (เรียลไทม์ที่สุด)
+    local guiMoney = nil
+    pcall(function()
+        local textStr = LocalPlayer.PlayerGui.Towers.Cash.Frame.TextLabel.Text
+        guiMoney = ParseMoney(textStr)
+    end)
+    if guiMoney then return guiMoney end
+    
+    -- สำรองเผื่อ UI ไม่โหลด
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     local moneyObj = ls and (ls:FindFirstChild("Money") or ls:FindFirstChild("Cash"))
     if moneyObj then return ParseMoney(moneyObj.Value) end
@@ -60,6 +69,26 @@ local function GetCurrentWave()
 end
 
 task.spawn(function()
+        -- ============================================================================== --
+-- // ระบบ Auto Skip Wave (ทำงานแยกอิสระ)
+-- ============================================================================== --
+task.spawn(function()
+    while task.wait(0.5) do
+        -- ถ้ากดเปิดสวิตช์ Auto Skip ในเมนู UI
+        if Options.AutoSkip and Options.AutoSkip.Value then
+            pcall(function()
+                local autoBtn = LocalPlayer.PlayerGui.autoskip.auto
+                local color = autoBtn.BackgroundColor3
+                
+                -- 🔥 เช็คสี: ถ้าสีแดง (255, 93, 93) ค่า R จะมากกว่า G แปลว่ามัน Off อยู่
+                if color.R > color.G then
+                    -- ยิง Remote เปิดให้เป็นสีเขียวทันที
+                    EventFolder:WaitForChild("waveSkip"):FireServer(true)
+                end
+            end)
+        end
+    end
+end)
     while not LocalPlayer:FindFirstChild("leaderstats") do task.wait(0.5) end
     local lastMoney = GetCurrentMoney()
     local isDropping = false
@@ -242,6 +271,7 @@ Tabs.Main:AddButton({ Title = "Delete selected macro", Callback = function()
 end})
 
 Tabs.Main:AddSection("Macro Controls")
+local AutoSkipToggle = Tabs.Main:AddToggle("AutoSkip", {Title = "Auto Skip Wave", Default = false }) -- 🔥 เพิ่มบรรทัดนี้
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
 
