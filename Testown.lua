@@ -1,4 +1,8 @@
-
+-- ============================================================================== --
+-- // SKIBI DEFENSE - FLUENT MACRO EDITION V24 (ULTIMATE SAFE + AUTO SKIP)
+-- // UI Design: All-in-One Main Tab + Safe Record System
+-- // Logic: Safe Workspace Observer + Oracle Data Miner + Smart Upgrade + Auto Skip
+-- ============================================================================== --
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -17,7 +21,7 @@ local SellRemote = EventFolder:WaitForChild("RemoveTower")
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local Window = Fluent:CreateWindow({
     Title = "Skibi Macro V24",
-    SubTitle = "Interceptor Edition",
+    SubTitle = "Ultimate Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(500, 480),
     Acrylic = false,
@@ -43,7 +47,7 @@ local function ParseMoney(val)
 end
 
 local function GetCurrentMoney()
-    -- 🔥 ดึงจาก UI ตามที่คุณแนะนำ (เรียลไทม์ที่สุด)
+    -- 🔥 ดึงจาก UI (เรียลไทม์ที่สุด)
     local guiMoney = nil
     pcall(function()
         local textStr = LocalPlayer.PlayerGui.Towers.Cash.Frame.TextLabel.Text
@@ -67,25 +71,20 @@ local function GetCurrentWave()
     end)
     return currentWave
 end
+
 -- ============================================================================== --
 -- // 🔥 ระบบ Auto Skip Wave (Standalone & Reliable Edition)
 -- ============================================================================== --
 task.spawn(function()
-    -- รอให้ระบบแสดงผลของเกม (UIDisplay) พร้อมทำงานก่อนเริ่มตรวจจับ
     ReplicatedStorage:WaitForChild("UIDisplay")
-    
-    while task.wait(1) do -- ตรวจสอบทุก 1 วินาที เพื่อไม่ให้หนักเครื่องเกินไป
+    while task.wait(1) do 
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
                 local autoskipGui = LocalPlayer.PlayerGui:FindFirstChild("autoskip")
                 if autoskipGui and autoskipGui:FindFirstChild("auto") then
                     local btn = autoskipGui.auto
                     local color = btn.BackgroundColor3
-                    
-                    -- ตรวจจับสีแดง [255, 93, 93] แปลว่าสถานะคือ OFF
-                    -- เราเช็คว่าถ้าค่าสีแดง (R) มากกว่าสีเขียว (G) ชัดเจน แสดงว่ายังปิดอยู่
                     if color.R > color.G then
-                        -- ยิง Remote เพื่อสั่งเปิด Auto Skip ทันที
                         EventFolder:WaitForChild("waveSkip"):FireServer(true)
                     end
                 end
@@ -259,19 +258,12 @@ Tabs.Main:AddButton({ Title = "Delete selected macro", Callback = function()
                     Callback = function()
                         delfile("SkibiMacroData/" .. fName .. ".json")
                         Fluent:Notify({ Title = "Deleted", Content = "ลบไฟล์ " .. fName .. " สำเร็จ!", Duration = 3 })
-                        
-                        -- รีเฟรชรายชื่อไฟล์ใน Dropdown ใหม่
                         local files = GetMacroFiles()
                         Options.MacroProfiles:SetValues(files)
-                        Options.MacroProfiles:SetValue(files[1]) -- เด้งกลับไปเลือกไฟล์แรกสุด
+                        Options.MacroProfiles:SetValue(files[1]) 
                     end
                 },
-                {
-                    Title = "ยกเลิก",
-                    Callback = function()
-                        -- ไม่ทำอะไร ปิดหน้าต่างไป
-                    end
-                }
+                { Title = "ยกเลิก", Callback = function() end }
             }
         })
     else
@@ -280,7 +272,7 @@ Tabs.Main:AddButton({ Title = "Delete selected macro", Callback = function()
 end})
 
 Tabs.Main:AddSection("Macro Controls")
-local AutoSkipToggle = Tabs.Main:AddToggle("AutoSkip", {Title = "Auto Skip Wave", Default = false }) -- 🔥 เพิ่มบรรทัดนี้
+local AutoSkipToggle = Tabs.Main:AddToggle("AutoSkip", {Title = "Auto Skip Wave", Default = false })
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
 
@@ -303,7 +295,6 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
         targetLevel = instanceToLevel[tostring(targetId)]
     end
     
-    -- 🔥 เช็คความชัวร์จาก TowerData ในเกมเผื่อไว้ด้วย
     local actualLevel = targetLevel
     pcall(function()
         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(tostring(targetId))
@@ -312,7 +303,6 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
         end
     end)
     
-    -- 🔥 เพิ่ม stepData.level เข้าไปใน JSON
     local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = actualLevel }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
@@ -405,7 +395,6 @@ local function PlayMacroData()
         local useMoney = Options.PlayModes.Value["Money"]
         local customDelay = Options.StepDelay.Value
         
-        -- 🔥 จับเวลา Global Time ตั้งแต่เริ่มกด Play
         local playStartTime = tick()
 
         for i = 1, actionCount do
@@ -413,7 +402,6 @@ local function PlayMacroData()
             local step = _G.MacroData[tostring(i)]
             if not step then continue end
 
-            -- 1. บังคับรอ Step Delay เสมอ (ป้องกันเกมรวนถ้ายิงเร็วเกิน)
             local passed = 0
             while passed < customDelay do
                 if not isReplaying then return end
@@ -421,7 +409,6 @@ local function PlayMacroData()
                 task.wait(0.1); passed = passed + 0.1
             end
 
-            -- 🔥 2. ระบบ Global Time (รอให้ถึงเวลาเป๊ะๆ ตามที่ Record ไว้)
             if useTime then
                 while (tick() - playStartTime) < step.time do
                     if not isReplaying then return end
@@ -474,10 +461,9 @@ local function PlayMacroData()
                     local unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
                     
                     if unitToUpgrade then
-                        -- 🔥 เช็ค Attribute จาก TowerData ว่าอัพถึงขั้นที่ต้องการหรือยัง
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(unitToUpgrade.Name)
                         if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
-                            isUpgraded = true -- อัพเสร็จแล้ว ข้ามสเต็ปนี้ได้เลย!
+                            isUpgraded = true
                         else
                             local idNum = tonumber(unitToUpgrade.Name)
                             if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
