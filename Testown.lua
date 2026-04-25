@@ -1,8 +1,4 @@
--- ============================================================================== --
--- // SKIBI DEFENSE - FLUENT MACRO EDITION V24 (REMOTE INTERCEPTOR)
--- // UI Design: All-in-One Main Tab + Safe Record System
--- // Logic: Namecall Interceptor (กันข้ามสเต็ป 100%) + Oracle Data Miner + Fast Exec
--- ============================================================================== --
+
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
