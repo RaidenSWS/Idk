@@ -533,35 +533,41 @@ task.spawn(function()
             local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
             if targetFolder and #targetFolder:GetChildren() == 0 then TriggerReset("Map Cleared") end
 
-            -- 3. GameEnded UI
+            -- 3. GameEnded UI (🔥 ปิดระบบตาทิพย์ ต้องรอกล่องโผล่มาจริงๆ ถึงจะทำงาน)
             local isEndedScreenVisible = false
             local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
-            if gameEndedGui and (gameEndedGui.Enabled or gameEndedGui.Visible) then
+            if gameEndedGui and ((gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled) or (gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible)) then
                 local frame = gameEndedGui:FindFirstChild("Frame")
-                local replayBtn = frame and frame:FindFirstChild("replay")
-                if replayBtn and replayBtn.Visible then
-                    isEndedScreenVisible = true
-                    TriggerReset("Game Over UI")
-                    if Options.RecordMacro and Options.RecordMacro.Value then Options.RecordMacro:SetValue(false) end
-                    if Options.AutoReplay and Options.AutoReplay.Value then
-                        task.wait(3) 
-                        ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                -- 🔥 เช็คว่ากล่อง Frame ตรงกลางไม่ได้ถูกซ่อนอยู่
+                if frame and frame.Visible then
+                    local replayBtn = frame:FindFirstChild("replay")
+                    if replayBtn and replayBtn.Visible then
+                        isEndedScreenVisible = true
+                        TriggerReset("Game Over UI")
+                        if Options.RecordMacro and Options.RecordMacro.Value then Options.RecordMacro:SetValue(false) end
+                        if Options.AutoReplay and Options.AutoReplay.Value then
+                            task.wait(3) 
+                            ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
+                        end
                     end
                 end
             end
 
-            -- 4. StartUI
+            -- 4. StartUI (🔥 ปิดระบบตาทิพย์)
             local isStartScreenVisible = false
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
-            if startGui and (startGui.Enabled or startGui.Visible) then
+            if startGui and ((startGui:IsA("ScreenGui") and startGui.Enabled) or (startGui:IsA("GuiObject") and startGui.Visible)) then
                 local frame = startGui:FindFirstChild("Frame")
-                local startBtn = frame and frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
-                if startBtn and startBtn.Visible then
-                    isStartScreenVisible = true
-                    TriggerReset("Start UI")
-                    if Options.AutoReady and Options.AutoReady.Value then
-                        task.wait(3) 
-                        ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                -- 🔥 เช็คว่ากล่อง Frame ตรงกลางไม่ได้ถูกซ่อนอยู่
+                if frame and frame.Visible then
+                    local startBtn = frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
+                    if startBtn and startBtn.Visible then
+                        isStartScreenVisible = true
+                        TriggerReset("Start UI")
+                        if Options.AutoReady and Options.AutoReady.Value then
+                            task.wait(3) 
+                            ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                        end
                     end
                 end
             end
