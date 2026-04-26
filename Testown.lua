@@ -257,11 +257,23 @@ local function WipeRecordingState()
 end
 
 -- ============================================================================== --
--- // 🔥 4. THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม
+-- // 🔥 4. THE ORACLE: ระบบขุดราคา (UI Scanner + Database)
 -- ============================================================================== --
 local function GetExactCost(unitName, actionType, upgradeLevel)
     if actionType == "Sell" then return 0 end
     local cost = 0
+    
+    -- 🎯 วิธีที่ 1: ดึงจากหน้า UI TowerMarker สดๆ ตอนกดอัพเกรด (ตามที่คุณหามา!)
+    if actionType == "Upgrade" then
+        pcall(function()
+            local txt = LocalPlayer.PlayerGui.TowerMarker.Anchor.Frame.Core.Upgrade.Action.Text
+            local numStr = string.match(string.gsub(txt, ",", ""), "%d+")
+            if numStr then cost = tonumber(numStr) end
+        end)
+        if cost > 0 then return cost end
+    end
+
+    -- 🎯 วิธีที่ 2: สำรองหาจากฐานข้อมูลเผื่อ UI ไม่ขึ้น
     pcall(function()
         local rs = game:GetService("ReplicatedStorage")
         local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
@@ -598,22 +610,40 @@ local function PlayMacroData()
 end
 
 local hasPlayedThisRound = false
+local currentLeaderstats = nil -- ตัวเก็บความจำ Leaderstats
+
 -- ============================================================================== --
--- // 🔥 ระบบ Automation Core (Smart Reset & Sync Loop)
+-- // 🔥 ระบบ Automation Core (Leaderstats Sync & Smart Loop)
 -- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม
-            local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
-            local isEndedScreenVisible = false
+            -- 🎯 0. ระบบจับ Leaderstats เกิดใหม่ (ตัวการันตีว่าเริ่มด่าน 100% ตามที่คุณแนะนำ!)
+            local currentLsInGame = LocalPlayer:FindFirstChild("leaderstats")
             
+            if currentLsInGame and currentLsInGame ~= currentLeaderstats then
+                -- 🔥 Leaderstats เปลี่ยนตัว/เกิดใหม่ = เริ่มด่านใหม่แน่นอน!
+                currentLeaderstats = currentLsInGame
+                hasPlayedThisRound = false 
+                table.clear(playInstanceMap) 
+                
+                -- ถ้าระบบ Play เปิดอยู่ ให้ลุยสเต็ปแรกเลย!
+                if isReplaying then
+                    task.wait(4) -- หน่วง 4 วิ ให้เกมวางโมเดลแมพให้เสร็จก่อน
+                    hasPlayedThisRound = true
+                    PlayMacroData()
+                end
+            elseif not currentLsInGame then
+                -- ถ้าไม่มี Leaderstats (เช่น ตอนโหลดด่าน หรืออยู่ล็อบบี้) ให้ล้างความจำ
+                currentLeaderstats = nil
+            end
+
+            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม (Auto Replay)
+            local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
             if gameEndedGui and ((gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled) or (gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible)) then
                 local frame = gameEndedGui:FindFirstChild("Frame")
                 if frame and frame.Visible then
-                    isEndedScreenVisible = true
                     if frame:FindFirstChild("replay") and frame.replay.Visible then
-                        -- 🧹 ล้างสถานะเมื่อจบเกม
                         hasPlayedThisRound = false 
                         table.clear(playInstanceMap) 
                         
@@ -621,40 +651,28 @@ task.spawn(function()
                             Options.RecordMacro:SetValue(false)
                         end
                         if Options.AutoReplay and Options.AutoReplay.Value then
-                            task.wait(3) -- หน่วงเวลา 3 วิ
+                            task.wait(3) 
                             ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
                         end
                     end
                 end
             end
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Ready)
+            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready)
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
-            local isStartScreenVisible = false
-            
             if startGui and ((startGui:IsA("ScreenGui") and startGui.Enabled) or (startGui:IsA("GuiObject") and startGui.Visible)) then
                 local frame = startGui:FindFirstChild("Frame")
                 if frame and frame.Visible then
-                    isStartScreenVisible = true
-                    -- 🧹 เมื่อเจอหน้า Ready ให้การันตีว่าสถานะต้องเป็น False เสมอ
-                    hasPlayedThisRound = false 
+                    hasPlayedThisRound = false -- เซฟตี้ปลดล็อคการรันมาโคร
                     
                     if Options.AutoReady and Options.AutoReady.Value then
-                        task.wait(3) -- 🔥 หน่วงเวลา 3 วิ ให้ทุกอย่างโหลดนิ่งก่อนกด Ready
+                        task.wait(3) 
                         ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
                     end
                 end
             end
-
-            -- 🎯 3. ระบบ Infinite Loop: จะเริ่มเล่นก็ต่อเมื่อ "Ready หายไปแล้ว" และ "เริ่มด่านแล้ว"
-            if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
-                -- ต้องมั่นใจว่า UI ทั้งหมด (จบเกม/หน้าเริ่ม) หายไปจากจอแล้วจริงๆ
-                if not isEndedScreenVisible and not isStartScreenVisible then
-                    task.wait(5) -- 🔥 หน่วงเวลา 5 วิ เพื่อให้หน้าจอ Ready หายไปสนิทและแมพโหลดครบ
-                    hasPlayedThisRound = true
-                    PlayMacroData()
-                end
-            end
+            
+            -- ยกเลิกระบบ Loop แบบที่ 3 (เช็ค UI) ออกไปเลย เพราะเราใช้ Leaderstats (เบอร์ 0) เป็นตัวจัดการที่แม่นยำกว่าแล้ว!
         end)
     end
 end)
