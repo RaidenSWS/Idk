@@ -592,21 +592,6 @@ local function PlayMacroData()
                     
                     attempts = attempts + 1
                 until attempts >= 15 or not isReplaying
-
-            elseif step.type == "Sell" then
-                local attempts = 0
-                repeat
-                    local unitToSell = playInstanceMap[step.targetID]
-                    if unitToSell then
-                        local id = tonumber(unitToSell.Name) or unitToSell.Name
-                        pcall(function() SellRemote:FireServer(id) end)
-                        task.wait(0.4)
-                        if not unitToSell.Parent then playInstanceMap[step.targetID] = nil break end
-                    else break end
-                    attempts = attempts + 1
-                until attempts >= 15 or not isReplaying
-            end
-        end
         
         if isReplaying then
             UpdateStatus("Completed", "-", "-", "-", "Waiting for next match...")
