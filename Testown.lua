@@ -538,12 +538,33 @@ local function PlayMacroData()
     end)
 end
 
--- ============================================================================== --
--- // 🔥 ระบบ Automation Core ( Leaderstats Trigger + Auto Save )
--- ============================================================================== --
 local hasPlayedThisRound = false
-local currentLeaderstats = nil
+local currentLeaderstats = nil -- ตัวเก็บความจำ Leaderstats
 
+-- 🔥 ฟังก์ชันตาทิพย์ของจริง: ตรวจสอบพิกัดว่า UI อยู่ตรงกลางจอให้เห็นจริงๆ ไม่ใช่ซ่อนตกขอบจอ
+local function IsTrulyVisible(gui)
+    if not gui then return false end
+    if not gui.Visible then return false end
+    local sg = gui:FindFirstAncestorWhichIsA("ScreenGui")
+    if sg and not sg.Enabled then return false end
+    
+    local pos = gui.AbsolutePosition
+    local size = gui.AbsoluteSize
+    local view = Workspace.CurrentCamera.ViewportSize
+    
+    -- 1. ถ้าขนาด UI เล็กกว่า 10 พิกเซล = เกมซ่อนไว้
+    if size.X < 10 or size.Y < 10 then return false end
+    -- 2. ถ้าตำแหน่ง UI ทะลุความสูง/ความกว้างของจอไปแล้ว = ตกขอบจอ
+    if pos.Y >= view.Y - 10 or pos.X >= view.X - 10 then return false end
+    -- 3. ถ้าตำแหน่ง UI ติดลบจนหายไปด้านบนซ้าย = ตกขอบจอ
+    if pos.Y + size.Y <= 0 or pos.X + size.X <= 0 then return false end
+    
+    return true
+end
+
+-- ============================================================================== --
+-- // 🔥 ระบบ Automation Core ( Leaderstats Trigger + Smart Auto Save )
+-- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
@@ -563,39 +584,38 @@ task.spawn(function()
                 currentLeaderstats = nil
             end
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกมแบบเซฟตี้ (Auto Stop Record & Replay)
+            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกม (Auto Stop Record & Replay)
             local endGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
-            if endGui and endGui:IsA("ScreenGui") and endGui.Enabled then
+            if endGui then
                 local frame = endGui:FindFirstChild("Frame")
-                -- เช็คว่ากล่องโผล่มาบนจอจริงๆ ไม่ได้โดนซ่อน (AbsolutePosition.X ต้องไม่ติดลบ)
-                if frame and frame.Visible and frame.AbsolutePosition.X >= 0 then
-                    local btn = frame:FindFirstChild("replay")
-                    if btn and btn.Visible then
-                        
-                        -- 🔥 ปลุกชีพ! หยุด Record และเซฟไฟล์อัตโนมัติเมื่อจบเกม
-                        if Options.RecordMacro and Options.RecordMacro.Value then
-                            Options.RecordMacro:SetValue(false)
-                        end
-                        
-                        if Options.AutoReplay and Options.AutoReplay.Value then
-                            task.wait(3) 
-                            ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
-                        end
+                local replayBtn = frame and frame:FindFirstChild("replay")
+                
+                -- 🔥 ใช้ฟังก์ชันคำนวณพิกัด: กล่องต้องโผล่มากลางจอจริงๆ ถึงจะทำงาน
+                if IsTrulyVisible(frame) and IsTrulyVisible(replayBtn) then
+                    
+                    -- หยุด Record และเซฟไฟล์อัตโนมัติเมื่อจบเกม
+                    if Options.RecordMacro and Options.RecordMacro.Value then
+                        Options.RecordMacro:SetValue(false)
+                    end
+                    
+                    if Options.AutoReplay and Options.AutoReplay.Value then
+                        task.wait(3) 
+                        ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
                     end
                 end
             end
 
-            -- 🎯 3. ตรวจจับหน้าจอตอนเริ่มเกมแบบเซฟตี้ (Auto Ready)
-            if Options.AutoReady and Options.AutoReady.Value then
-                local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
-                if startGui and startGui:IsA("ScreenGui") and startGui.Enabled then
-                    local frame = startGui:FindFirstChild("Frame")
-                    if frame and frame.Visible and frame.AbsolutePosition.X >= 0 then
-                        local btn = frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
-                        if btn and btn.Visible then
-                            task.wait(3) 
-                            ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
-                        end
+            -- 🎯 3. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready)
+            local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
+            if startGui then
+                local frame = startGui:FindFirstChild("Frame")
+                local startBtn = frame and frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
+                
+                -- 🔥 ใช้ฟังก์ชันคำนวณพิกัด: กล่อง Ready ต้องโผล่มากลางจอจริงๆ
+                if IsTrulyVisible(frame) and IsTrulyVisible(startBtn) then
+                    if Options.AutoReady and Options.AutoReady.Value then
+                        task.wait(3) 
+                        ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
                     end
                 end
             end
@@ -603,7 +623,6 @@ task.spawn(function()
         end)
     end
 end)
-
 -- ============================================================================== --
 -- // 8. เชื่อมปุ่ม (Event Handlers)
 -- ============================================================================== --
