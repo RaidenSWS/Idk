@@ -539,7 +539,7 @@ local function PlayMacroData()
 end
 
 -- ============================================================================== --
--- // 🔥 ระบบ Automation Core ( Leaderstats Trigger )
+-- // 🔥 ระบบ Automation Core ( Leaderstats Trigger + Auto Save )
 -- ============================================================================== --
 local hasPlayedThisRound = false
 local currentLeaderstats = nil
@@ -563,15 +563,21 @@ task.spawn(function()
                 currentLeaderstats = nil
             end
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกมแบบเซฟตี้ (ไม่ทำให้ Record ปิดเองมั่วๆ)
-            if Options.AutoReplay and Options.AutoReplay.Value then
-                local endGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
-                if endGui and endGui:IsA("ScreenGui") and endGui.Enabled then
-                    local frame = endGui:FindFirstChild("Frame")
-                    -- เช็คว่ากล่องโผล่มาบนจอจริงๆ (AbsolutePosition.X ต้องไม่ติดลบ)
-                    if frame and frame.Visible and frame.AbsolutePosition.X >= 0 then
-                        local btn = frame:FindFirstChild("replay")
-                        if btn and btn.Visible then
+            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกมแบบเซฟตี้ (Auto Stop Record & Replay)
+            local endGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
+            if endGui and endGui:IsA("ScreenGui") and endGui.Enabled then
+                local frame = endGui:FindFirstChild("Frame")
+                -- เช็คว่ากล่องโผล่มาบนจอจริงๆ ไม่ได้โดนซ่อน (AbsolutePosition.X ต้องไม่ติดลบ)
+                if frame and frame.Visible and frame.AbsolutePosition.X >= 0 then
+                    local btn = frame:FindFirstChild("replay")
+                    if btn and btn.Visible then
+                        
+                        -- 🔥 ปลุกชีพ! หยุด Record และเซฟไฟล์อัตโนมัติเมื่อจบเกม
+                        if Options.RecordMacro and Options.RecordMacro.Value then
+                            Options.RecordMacro:SetValue(false)
+                        end
+                        
+                        if Options.AutoReplay and Options.AutoReplay.Value then
                             task.wait(3) 
                             ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
                         end
