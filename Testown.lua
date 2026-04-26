@@ -1,7 +1,6 @@
 -- ============================================================================== --
--- // SKIBI DEFENSE - FLUENT MACRO EDITION V24 (ULTIMATE SAFE + AUTO SKIP)
--- // UI Design: All-in-One Main Tab + Safe Record System
--- // Logic: Safe Workspace Observer + Oracle Data Miner + Smart Upgrade + Auto Skip
+-- // SKIBI DEFENSE - FLUENT MACRO EDITION V25 (GOD TIER AUTOMATION)
+-- // Features: Dynamic ID Target Lock, Relative Upgrading, Triple Safety Reset
 -- ============================================================================== --
 
 local Players = game:GetService("Players")
@@ -15,12 +14,9 @@ local PlaceRemote = EventFolder:WaitForChild("placeTower")
 local UpgradeRemote = EventFolder:WaitForChild("UpgradeTower")
 local SellRemote = EventFolder:WaitForChild("RemoveTower")
 
--- ============================================================================== --
--- // 1. ตั้งค่า Fluent UI
--- ============================================================================== --
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local Window = Fluent:CreateWindow({
-    Title = "Skibi Macro V24",
+    Title = "Skibi Macro V25",
     SubTitle = "Ultimate Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(500, 480),
@@ -36,7 +32,7 @@ local Tabs = {
 local Options = Fluent.Options
 
 -- ============================================================================== --
--- // 2. Helper Functions & Backup Money Queue 
+-- // Helper Functions & Data
 -- ============================================================================== --
 local MoneyQueue = {}
 
@@ -47,15 +43,9 @@ local function ParseMoney(val)
 end
 
 local function GetCurrentMoney()
-    -- 🔥 ดึงจาก UI (เรียลไทม์ที่สุด)
     local guiMoney = nil
-    pcall(function()
-        local textStr = LocalPlayer.PlayerGui.Towers.Cash.Frame.TextLabel.Text
-        guiMoney = ParseMoney(textStr)
-    end)
+    pcall(function() guiMoney = ParseMoney(LocalPlayer.PlayerGui.Towers.Cash.Frame.TextLabel.Text) end)
     if guiMoney then return guiMoney end
-    
-    -- สำรองเผื่อ UI ไม่โหลด
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     local moneyObj = ls and (ls:FindFirstChild("Money") or ls:FindFirstChild("Cash"))
     if moneyObj then return ParseMoney(moneyObj.Value) end
@@ -65,29 +55,21 @@ end
 local function GetCurrentWave()
     local currentWave = 1
     pcall(function()
-        local waveText = LocalPlayer.PlayerGui.Data.Wave.Frame.TextLabel.Text
-        local numStr = string.match(waveText, "%d+")
+        local numStr = string.match(LocalPlayer.PlayerGui.Data.Wave.Frame.TextLabel.Text, "%d+")
         if numStr then currentWave = tonumber(numStr) end
     end)
     return currentWave
 end
 
 -- ============================================================================== --
--- // 🔥 ระบบ Auto Skip Wave (Ultimate Force Click Edition)
+-- // Auto Features (Skip & Speed)
 -- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do 
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                -- เข้าถึงปุ่มตรงๆ ตาม Path เป๊ะๆ ที่คุณดึงมา
                 local btn = LocalPlayer.PlayerGui.autoskip.auto
-                local color = btn.BackgroundColor3
-                
-                -- เช็คว่าสีปุ่มเป็นสีแดง (255, 93, 93) หรือไม่ (R > G แปลว่ากำลัง Off)
-                if color.R > color.G then
-                    
-                    -- 🎯 ไม้ตายที่ 1: จำลองการ "คลิกเมาส์" ที่ปุ่มนั้น (หลอก LocalScript ของเกม)
-                    -- ตัวรันสคริปต์ (Executor) จะสั่ง Fire ลอจิกการคลิกทั้งหมดที่ฝังอยู่ในปุ่ม
+                if btn.BackgroundColor3.R > btn.BackgroundColor3.G then
                     if getconnections then
                         for _, conn in pairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end
                         for _, conn in pairs(getconnections(btn.Activated)) do conn:Fire() end
@@ -95,98 +77,64 @@ task.spawn(function()
                         firesignal(btn.MouseButton1Click)
                         firesignal(btn.Activated)
                     end
-
-                    -- 🎯 ไม้ตายที่ 2: ยิง Remote ทับไปอีกชั้นเผื่อไว้ (ตามที่คุณดัก Remote Spy มาได้)
                     local eventFolder = ReplicatedStorage:FindFirstChild("Event")
-                    if eventFolder and eventFolder:FindFirstChild("waveSkip") then
-                        eventFolder.waveSkip:FireServer(true)
-                    end
-                    
+                    if eventFolder and eventFolder:FindFirstChild("waveSkip") then eventFolder.waveSkip:FireServer(true) end
                 end
             end)
         end
     end
 end)
 
--- ============================================================================== --
--- // 🔥 ระบบ Auto Speed (Direct Remote Injector)
--- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do 
         if Options.AutoSpeed and Options.AutoSpeed.Value ~= "Off" then
             pcall(function()
-                -- 1. แปลงค่าจาก Dropdown เป็นตัวเลขที่ต้องใช้ส่ง Remote
                 local desiredSpeed = 1
                 local val = Options.AutoSpeed.Value
-                if val == "Pause" then 
-                    desiredSpeed = 0
-                elseif string.match(val, "%d+") then
-                    desiredSpeed = tonumber(string.match(val, "%d+"))
-                end
+                if val == "Pause" then desiredSpeed = 0 elseif string.match(val, "%d+") then desiredSpeed = tonumber(string.match(val, "%d+")) end
                 
-                -- 2. เช็คความเร็วปัจจุบันบนจอ (จะได้ไม่ยิง Remote ซ้ำซากให้โดนเตะ)
-                local currentSpeed = -1 -- ตั้ง -1 ไว้เผื่อหา UI ไม่เจอ
+                local currentSpeed = -1
                 local towersGui = LocalPlayer.PlayerGui:FindFirstChild("Towers")
-                if towersGui then
-                    local speedBtn = towersGui:FindFirstChild("speedButton")
-                    if speedBtn then
-                        -- เช็คปุ่ม Pause ว่าโชว์อยู่ไหม
-                        if speedBtn:FindFirstChild("Pause") and speedBtn.Pause.Visible then
-                            currentSpeed = 0
-                        else
-                            -- ไล่เช็คปุ่ม 1x ถึง 5x ว่าอันไหน Visible อยู่บนจอ
-                            for i = 1, 5 do
-                                local child = speedBtn:FindFirstChild(tostring(i).."x")
-                                if child and child:IsA("GuiObject") and child.Visible then
-                                    currentSpeed = i
-                                    break
-                                end
-                            end
+                if towersGui and towersGui:FindFirstChild("speedButton") then
+                    local speedBtn = towersGui.speedButton
+                    if speedBtn:FindFirstChild("Pause") and speedBtn.Pause.Visible then currentSpeed = 0
+                    else
+                        for i = 1, 5 do
+                            local child = speedBtn:FindFirstChild(tostring(i).."x")
+                            if child and child:IsA("GuiObject") and child.Visible then currentSpeed = i break end
                         end
                     end
                 end
                 
-                -- 3. ถ้าสปีดบนจอ ไม่ตรงกับที่เราล็อคไว้ ให้ยิง Remote "ตัวเลขนั้น" ไปตรงๆ เลย!
+                local gameRs = ReplicatedStorage:FindFirstChild("Game")
                 if currentSpeed ~= desiredSpeed and currentSpeed ~= -1 then
-                    local gameRs = ReplicatedStorage:FindFirstChild("Game")
-                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then
-                        gameRs.Speed.Change:FireServer(desiredSpeed)
-                    end
-                -- 4. ไม้ตาย: กรณี UI บั๊กหรือเกมซ่อนปุ่ม ยิงยัดไปเลยทุก 3 วินาที (กันเหนียว)
+                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then gameRs.Speed.Change:FireServer(desiredSpeed) end
                 elseif currentSpeed == -1 then
-                    local gameRs = ReplicatedStorage:FindFirstChild("Game")
-                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then
-                        gameRs.Speed.Change:FireServer(desiredSpeed)
-                        task.wait(2)
-                    end
+                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then gameRs.Speed.Change:FireServer(desiredSpeed) task.wait(2) end
                 end
             end)
         end
     end
 end)
--- ============================================================================== --
--- // ระบบเช็คเงิน (Money Queue)
--- ============================================================================== --
+
 task.spawn(function()
     while not LocalPlayer:FindFirstChild("leaderstats") do task.wait(0.5) end
     local lastMoney = GetCurrentMoney()
-    local isDropping = false
-    local preDropMoney = 0
-    
+    local isDropping, preDropMoney = false, 0
     while task.wait(0.05) do
         local curMoney = GetCurrentMoney()
         if curMoney < lastMoney then
             if not isDropping then isDropping = true; preDropMoney = lastMoney end
         elseif curMoney == lastMoney then
             if isDropping then
-                local totalSpent = preDropMoney - curMoney
-                if totalSpent > 0 then table.insert(MoneyQueue, { amount = totalSpent, time = tick(), claimed = false }) end
+                local spent = preDropMoney - curMoney
+                if spent > 0 then table.insert(MoneyQueue, { amount = spent, time = tick(), claimed = false }) end
                 isDropping = false
             end
         elseif curMoney > lastMoney then
             if isDropping then
-                local totalSpent = preDropMoney - lastMoney
-                if totalSpent > 0 then table.insert(MoneyQueue, { amount = totalSpent, time = tick(), claimed = false }) end
+                local spent = preDropMoney - lastMoney
+                if spent > 0 then table.insert(MoneyQueue, { amount = spent, time = tick(), claimed = false }) end
                 isDropping = false
             end
         end
@@ -194,22 +142,19 @@ task.spawn(function()
     end
 end)
 
-local function GetUnitByPosition(targetName, targetPosCf)
+local function GetUnitByPosition(targetName, targetPosCf, excludeMap)
     if not targetPosCf then return nil end
     local targetPos = targetPosCf.Position
-    local bestUnit = nil
-    local closestDist = 5 
-
+    local bestUnit, closestDist = nil, 4.0 
     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
     if targetFolder then
         for _, unit in ipairs(targetFolder:GetChildren()) do
-            if string.find(unit.Name, targetName) or string.find(unit:GetAttribute("sID") or "", targetName) then
+            local isExcluded = false
+            if excludeMap then for _, exId in pairs(excludeMap) do if exId == unit.Name then isExcluded = true break end end end
+            if not isExcluded and (string.find(unit.Name, targetName) or string.find(unit:GetAttribute("sID") or "", targetName)) then
                 local cf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
                 local dist = (cf.Position - targetPos).Magnitude
-                if dist <= closestDist then
-                    closestDist = dist
-                    bestUnit = unit
-                end
+                if dist <= closestDist then closestDist = dist; bestUnit = unit end
             end
         end
     end
@@ -227,38 +172,21 @@ local function GetRealUnitName(towerModel)
     return string.gsub(string.gsub(towerModel.Name, " Lvl?%.?%s*%d+", ""), " %(Lv.*%)", "")
 end
 
--- ============================================================================== --
--- // 3. ตัวแปรเก็บสถานะ Macro
--- ============================================================================== --
-_G.MacroData = {}
-local isRecording = false
-local isReplaying = false
-local recordStartTime = 0
-local actionCount = 0
-local instanceToId = {}
-local posToId = {}
-local instanceToLevel = {}
-local activeConnections = {}
+local _G_MacroData = {}
+local isRecording, isReplaying, recordStartTime, actionCount = false, false, 0, 0
+local instanceToId, posToId, instanceToLevel, activeConnections = {}, {}, {}, {}
 
 local function ClearConnections()
     for _, conn in ipairs(activeConnections) do if conn.Connected then conn:Disconnect() end end
     activeConnections = {}
 end
-
 local function WipeRecordingState()
-    _G.MacroData = {}
-    actionCount = 0
-    instanceToId = {}
-    posToId = {}
-    instanceToLevel = {}
+    _G_MacroData, actionCount, instanceToId, posToId, instanceToLevel = {}, 0, {}, {}, {}
     for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end 
     recordStartTime = tick()
     ClearConnections()
 end
 
--- ============================================================================== --
--- // 🔥 4. THE ORACLE: ระบบขุดราคาจากฐานข้อมูลเกม (เสถียร 100%)
--- ============================================================================== --
 local function GetExactCost(unitName, actionType, upgradeLevel)
     if actionType == "Sell" then return 0 end
     local cost = 0
@@ -269,8 +197,7 @@ local function GetExactCost(unitName, actionType, upgradeLevel)
             local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
             if module then
                 local data = require(module)
-                if actionType == "Place" then
-                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
+                if actionType == "Place" then cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
                 elseif actionType == "Upgrade" and data.Upgrades then
                     local upg = data.Upgrades[upgradeLevel]
                     if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
@@ -282,7 +209,7 @@ local function GetExactCost(unitName, actionType, upgradeLevel)
 end
 
 -- ============================================================================== --
--- // 5. สร้าง UI หน้า Main 
+-- // UI Setup
 -- ============================================================================== --
 local StatusPara = Tabs.Main:AddParagraph({ Title = "Macro Status: None", Content = "Action: -\nType: -\nUnit: -\nWaiting for: -" })
 local function UpdateStatus(status, action, actType, unit, waiting)
@@ -306,39 +233,28 @@ local NewProfileInput = Tabs.Main:AddInput("NewProfileName", { Title = "New macr
 Tabs.Main:AddButton({ Title = "Create new macro (Save)", Callback = function()
     local fName = Options.NewProfileName.Value
     if fName == "" then Fluent:Notify({ Title = "Error", Content = "พิมพ์ชื่อไฟล์ก่อนเซฟ!", Duration = 3 }) return end
-    writefile("SkibiMacroData/" .. fName .. ".json", HttpService:JSONEncode(_G.MacroData or {}))
+    writefile("SkibiMacroData/" .. fName .. ".json", HttpService:JSONEncode(_G_MacroData or {}))
     Options.MacroProfiles:SetValues(GetMacroFiles())
     Options.MacroProfiles:SetValue(fName)
-    Fluent:Notify({ Title = "Saved", Content = "สร้าง/บันทึกไฟล์ " .. fName .. ".json สำเร็จ!", Duration = 3 })
+    Fluent:Notify({ Title = "Saved", Content = "สร้าง/บันทึกไฟล์สำเร็จ!", Duration = 3 })
 end})
 
 Tabs.Main:AddButton({ Title = "Delete selected macro", Callback = function()
     local fName = Options.MacroProfiles.Value
-    if fName == "None" or fName == "" then
-        Fluent:Notify({ Title = "Error", Content = "ไม่มีไฟล์ที่เลือกให้ลบ!", Duration = 3 })
-        return
-    end
-
+    if fName == "None" or fName == "" then return end
     if isfile("SkibiMacroData/" .. fName .. ".json") then
         Window:Dialog({
-            Title = "ยืนยันการลบไฟล์",
-            Content = "คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์ '" .. fName .. "' ทิ้ง?\n(ลบแล้วไม่สามารถกู้คืนได้นะ)",
+            Title = "ยืนยันการลบไฟล์", Content = "คุณแน่ใจหรือไม่ว่าต้องการลบไฟล์ '" .. fName .. "' ทิ้ง?",
             Buttons = {
-                {
-                    Title = "ใช่ (ลบเลย)",
-                    Callback = function()
-                        delfile("SkibiMacroData/" .. fName .. ".json")
-                        Fluent:Notify({ Title = "Deleted", Content = "ลบไฟล์ " .. fName .. " สำเร็จ!", Duration = 3 })
-                        local files = GetMacroFiles()
-                        Options.MacroProfiles:SetValues(files)
-                        Options.MacroProfiles:SetValue(files[1]) 
-                    end
-                },
+                { Title = "ใช่ (ลบเลย)", Callback = function()
+                    delfile("SkibiMacroData/" .. fName .. ".json")
+                    Fluent:Notify({ Title = "Deleted", Content = "ลบไฟล์สำเร็จ!", Duration = 3 })
+                    Options.MacroProfiles:SetValues(GetMacroFiles())
+                    Options.MacroProfiles:SetValue(GetMacroFiles()[1]) 
+                end },
                 { Title = "ยกเลิก", Callback = function() end }
             }
         })
-    else
-        Fluent:Notify({ Title = "Error", Content = "หาไฟล์ไม่พบในระบบ!", Duration = 3 })
     end
 end})
 
@@ -348,31 +264,26 @@ local AutoReplayToggle = Tabs.Main:AddToggle("AutoReplay", {Title = "Auto Replay
 local AutoReadyToggle = Tabs.Main:AddToggle("AutoReady", {Title = "Auto Ready", Default = false })
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
-local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock", Description = "บังคับปรับสปีดเกมตลอดเวลา", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
-
-Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Description = "ดีเลย์ขั้นต่ำระหว่าง Playback", Default = 0.2, Min = 0.1, Max = 5, Rounding = 1 })
-local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Description = "เงื่อนไขที่ต้องรอก่อนรันสเต็ปถัดไป", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
+local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
+Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.1, Max = 5, Rounding = 1 })
+local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record) - Observer Method (Safe 100% ไม่โดนแบน)
+-- // Record Logic
 -- ============================================================================== --
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     actionCount = actionCount + 1
     local currentActionId = actionCount
-    local currentWave = GetCurrentWave()
-    
-    -- 🔥 เริ่มนับที่ 1 เสมอ เพราะยูนิตในเกมตอนวางคือ Level 1 (แก้บั๊กข้ามสเต็ปอัพเกรด)
     local targetLevel = 1
-    if actionType == "Place" then 
-        instanceToLevel[tostring(targetId)] = 1
+    if actionType == "Place" then instanceToLevel[tostring(targetId)] = 1
     elseif actionType == "Upgrade" then 
         instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 1) + 1 
         targetLevel = instanceToLevel[tostring(targetId)]
     end
     
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = targetLevel }
+    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = GetCurrentWave(), unit = unitName, cost = 0, level = targetLevel }
     if posCf then stepData.pos = FormatCFrame(posCf) end
-    _G.MacroData[tostring(currentActionId)] = stepData
+    _G_MacroData[tostring(currentActionId)] = stepData
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, targetLevel)
@@ -380,9 +291,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
             local passTime = 0
             while passTime < 1.5 do
                 for _, drop in ipairs(MoneyQueue) do
-                    if not drop.claimed and (tick() - drop.time) <= 3 then
-                        exactCost = drop.amount; drop.claimed = true; break
-                    end
+                    if not drop.claimed and (tick() - drop.time) <= 3 then exactCost = drop.amount; drop.claimed = true; break end
                 end
                 if exactCost > 0 then break end
                 task.wait(0.1); passTime = passTime + 0.1
@@ -401,11 +310,9 @@ local function StartObserving()
         if not isRecording or not newTower:IsA("Model") then return end
         local exactTime = tick() - recordStartTime 
         task.wait(0.05) 
-        
         local posCf = newTower.PrimaryPart and newTower.PrimaryPart.CFrame or newTower:GetModelCFrame()
         local posKey = GetPosKey(posCf.Position)
-        local unitName = GetRealUnitName(newTower)
-        local targetId = newTower.Name
+        local unitName, targetId = GetRealUnitName(newTower), newTower.Name
         
         if posToId[posKey] then
             local oldId = posToId[posKey]
@@ -422,9 +329,7 @@ local function StartObserving()
         if not isRecording then return end
         local exactTime = tick() - recordStartTime 
         local targetId = instanceToId[oldTower]
-        
         local posCf = oldTower.PrimaryPart and oldTower.PrimaryPart.CFrame or oldTower:GetModelCFrame()
-        local posKey = GetPosKey(posCf.Position)
         
         if targetId then
             task.delay(0.4, function()
@@ -432,7 +337,7 @@ local function StartObserving()
                 for inst, id in pairs(instanceToId) do if inst.Parent ~= nil and id == targetId then isUpgraded = true break end end
                 if not isUpgraded then
                     RecordAction("Sell", targetId, posCf, GetRealUnitName(oldTower), exactTime)
-                    posToId[posKey] = nil
+                    posToId[GetPosKey(posCf.Position)] = nil
                 end
                 instanceToId[oldTower] = nil
             end)
@@ -448,31 +353,28 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ปลอดภัย 100%)", Duration = 3 })
     StartObserving()
 end
 
-local playInstanceMap = {} -- 🔥 ย้ายมาไว้ข้างนอกเพื่อให้ระบบอื่นสั่งล้างค่าได้
+-- ============================================================================== --
+-- // Playback Logic (V25 God Tier)
+-- ============================================================================== --
+local playInstanceMap = {} 
 
 local function PlayMacroData()
     if not isReplaying then return end
     
     task.spawn(function()
-        local useTime = Options.PlayModes.Value["Time"]
-        local useWave = Options.PlayModes.Value["Wave"]
-        local useMoney = Options.PlayModes.Value["Money"]
+        local useTime, useWave, useMoney = Options.PlayModes.Value["Time"], Options.PlayModes.Value["Wave"], Options.PlayModes.Value["Money"]
         local customDelay = Options.StepDelay.Value
-        
         local playStartTime = tick()
-        -- 🧹 ล้างหน่วยความจำยูนิตเก่าทิ้งก่อนเริ่มเล่นรอบใหม่
         table.clear(playInstanceMap) 
 
         for i = 1, actionCount do
             if not isReplaying then return end 
-            local step = _G.MacroData[tostring(i)]
+            local step = _G_MacroData[tostring(i)]
             if not step then continue end
 
-            -- ดีเลย์ระหว่าง Step
             local passed = 0
             while passed < customDelay do
                 if not isReplaying then return end
@@ -480,7 +382,6 @@ local function PlayMacroData()
                 task.wait(0.1); passed = passed + 0.1
             end
 
-            -- รอเงื่อนไข (Time/Wave/Money)
             if useTime then
                 while (tick() - playStartTime) < step.time do
                     if not isReplaying then return end
@@ -514,61 +415,65 @@ local function PlayMacroData()
             end
 
             if step.type == "Place" then
-                local isPlaced = false
-                local attempts = 0
+                local isPlaced, attempts = false, 0
                 repeat
                     pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
-                    task.wait(0.5) -- 🔥 เพิ่มดีเลย์รอให้เซิร์ฟเวอร์วางของ
+                    task.wait(0.5) 
                     
-                    local foundUnit = nil
+                    local foundUnitName = nil
                     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
                     if targetFolder then
                         for _, unit in ipairs(targetFolder:GetChildren()) do
-                            local alreadyOwned = false
-                            for _, v in pairs(playInstanceMap) do if v == unit then alreadyOwned = true break end end
+                            local alreadyMapped = false
+                            for _, mappedId in pairs(playInstanceMap) do if mappedId == unit.Name then alreadyMapped = true break end end
                             
-                            if not alreadyOwned and (string.find(unit.Name, step.unit) or string.find(unit:GetAttribute("sID") or "", step.unit)) then
+                            if not alreadyMapped and (string.find(unit.Name, step.unit) or string.find(unit:GetAttribute("sID") or "", step.unit)) then
                                 local cf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
-                                if (cf.Position - targetPosCf.Position).Magnitude <= 3 then
-                                    foundUnit = unit
+                                if (cf.Position - targetPosCf.Position).Magnitude <= 3.5 then
+                                    foundUnitName = unit.Name
                                     break
                                 end
                             end
                         end
                     end
                     
-                    if foundUnit then 
+                    if foundUnitName then 
                         isPlaced = true 
-                        playInstanceMap[step.targetID] = foundUnit 
+                        playInstanceMap[step.targetID] = foundUnitName 
                     end
                     attempts = attempts + 1
                 until isPlaced or attempts >= 15 or not isReplaying
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
-                local targetLvl = step.level or 2
-                if targetLvl <= 1 then targetLvl = 2 end 
+                local currentIdStr = playInstanceMap[step.targetID]
                 
-                -- 🔥 จุดที่แก้บั๊ก 100%: ต้องใช้โมเดลในกระดานปัจจุบัน ไม่ใช่ ID เก่า
-                local unitToUpgrade = playInstanceMap[step.targetID]
-                
-                if unitToUpgrade then
-                    local currentIdStr = tostring(unitToUpgrade.Name)
+                -- Fallback: If not mapped, find it manually
+                if not currentIdStr then
+                    local fallbackUnit = GetUnitByPosition(step.unit, targetPosCf, playInstanceMap)
+                    if fallbackUnit then currentIdStr = fallbackUnit.Name end
+                end
+
+                if currentIdStr then
                     local currentIdNum = tonumber(currentIdStr) or currentIdStr
+                    
+                    -- 🔥 Relative Upgrade Logic (อ่านค่าปัจจุบัน แล้วบวก 1 เพื่อเป็นเป้าหมาย)
+                    local startLvl = 0
+                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                    if tData and tData:GetAttribute("Upgrade") then startLvl = tonumber(tData:GetAttribute("Upgrade")) or 0 end
+                    local goalLvl = startLvl + 1
                     
                     pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
                     task.wait(0.3)
                     
                     repeat
                         local isUpgraded = false
-                        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
-                        
-                        if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
-                            isUpgraded = true
-                        else
-                            pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
+                        local checkData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                        if checkData and checkData:GetAttribute("Upgrade") then
+                            if (tonumber(checkData:GetAttribute("Upgrade")) or 0) >= goalLvl then isUpgraded = true end
                         end
                         
+                        if not isUpgraded then pcall(function() UpgradeRemote:FireServer(currentIdNum) end) end
                         task.wait(0.4)
                         attempts = attempts + 1
                     until isUpgraded or attempts >= 12 or not isReplaying
@@ -576,23 +481,19 @@ local function PlayMacroData()
 
             elseif step.type == "Sell" then
                 local attempts = 0
-                -- 🔥 จุดที่แก้บั๊ก: อ้างอิงตัวที่จะขายจากกระดานปัจจุบันเช่นกัน
-                local unitToSell = playInstanceMap[step.targetID]
-                
-                if unitToSell then
-                    local currentIdStr = tostring(unitToSell.Name)
+                local currentIdStr = playInstanceMap[step.targetID]
+                if not currentIdStr then
+                    local fallbackUnit = GetUnitByPosition(step.unit, targetPosCf, nil)
+                    if fallbackUnit then currentIdStr = fallbackUnit.Name end
+                end
+
+                if currentIdStr then
                     local currentIdNum = tonumber(currentIdStr) or currentIdStr
-                    
                     repeat
                         pcall(function() SellRemote:FireServer(currentIdNum) end)
                         task.wait(0.4)
-                        
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
-                        if not tData then 
-                            playInstanceMap[step.targetID] = nil 
-                            break 
-                        end
-                        
+                        if not tData then playInstanceMap[step.targetID] = nil break end
                         attempts = attempts + 1
                     until attempts >= 15 or not isReplaying
                 end
@@ -606,64 +507,58 @@ local function PlayMacroData()
     end)
 end
 
+-- ============================================================================== --
+-- // Automation Core (Triple Safety Reset)
+-- ============================================================================== --
 local hasPlayedThisRound = false
-local lastSeenWave = 0 -- 🔥 ตัวช่วยจำ Wave
+local lastSeenWave = 0 
 
--- ============================================================================== --
--- // 🔥 ระบบ Automation Core (Triple Safety Reset Loop)
--- ============================================================================== --
+local function TriggerReset(reason)
+    if hasPlayedThisRound then
+        hasPlayedThisRound = false
+        table.clear(playInstanceMap)
+    end
+end
+
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
             local currentWaveNum = GetCurrentWave()
             
-            -- 🎯 1. เช็ค Wave ย้อนกลับ (ถ้าย้อนกลับมา Wave 1 แปลว่าขึ้นเกมใหม่ 100%)
-            if currentWaveNum < lastSeenWave then
-                hasPlayedThisRound = false
-                table.clear(playInstanceMap)
-            end
+            -- 1. Wave Drop Check
+            if currentWaveNum < lastSeenWave then TriggerReset("Wave Drop") end
             lastSeenWave = currentWaveNum
 
-            -- 🎯 2. เช็คจำนวนยูนิตบนกระดาน (ถ้าหายเกลี้ยงแปลว่ารีเซ็ตด่าน)
+            -- 2. Tower Clear Check
             local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
-            if targetFolder and #targetFolder:GetChildren() == 0 and hasPlayedThisRound then
-                hasPlayedThisRound = false
-                table.clear(playInstanceMap)
-            end
+            if targetFolder and #targetFolder:GetChildren() == 0 then TriggerReset("Map Cleared") end
 
-            -- 🎯 3. ตรวจจับหน้าจอตอนจบเกม
-            local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
+            -- 3. GameEnded UI
             local isEndedScreenVisible = false
-            
-            if gameEndedGui and ((gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled) or (gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible)) then
+            local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
+            if gameEndedGui and (gameEndedGui.Enabled or gameEndedGui.Visible) then
                 local frame = gameEndedGui:FindFirstChild("Frame")
-                if frame and frame.Visible then
+                local replayBtn = frame and frame:FindFirstChild("replay")
+                if replayBtn and replayBtn.Visible then
                     isEndedScreenVisible = true
-                    if frame:FindFirstChild("replay") and frame.replay.Visible then
-                        hasPlayedThisRound = false 
-                        table.clear(playInstanceMap) 
-                        
-                        if Options.RecordMacro and Options.RecordMacro.Value then
-                            Options.RecordMacro:SetValue(false)
-                        end
-                        if Options.AutoReplay and Options.AutoReplay.Value then
-                            task.wait(3) 
-                            ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
-                        end
+                    TriggerReset("Game Over UI")
+                    if Options.RecordMacro and Options.RecordMacro.Value then Options.RecordMacro:SetValue(false) end
+                    if Options.AutoReplay and Options.AutoReplay.Value then
+                        task.wait(3) 
+                        ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
                     end
                 end
             end
 
-            -- 🎯 4. ตรวจจับหน้าจอตอนเริ่มเกม (Ready)
-            local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
+            -- 4. StartUI
             local isStartScreenVisible = false
-            
-            if startGui and ((startGui:IsA("ScreenGui") and startGui.Enabled) or (startGui:IsA("GuiObject") and startGui.Visible)) then
+            local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
+            if startGui and (startGui.Enabled or startGui.Visible) then
                 local frame = startGui:FindFirstChild("Frame")
-                if frame and frame.Visible then
+                local startBtn = frame and frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
+                if startBtn and startBtn.Visible then
                     isStartScreenVisible = true
-                    hasPlayedThisRound = false -- ล้างความจำเมื่อเจอหน้า Ready
-                    
+                    TriggerReset("Start UI")
                     if Options.AutoReady and Options.AutoReady.Value then
                         task.wait(3) 
                         ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
@@ -671,13 +566,14 @@ task.spawn(function()
                 end
             end
             
-            -- 🎯 5. ระบบ Infinite Loop (รันสเต็ปอัตโนมัติ)
+            -- 5. Play Loop Trigger
             if isReplaying and not hasPlayedThisRound and currentWaveNum >= 1 then
-                -- เช็คให้ชัวร์ว่า UI บังจอหายไปหมดแล้ว
                 if not isEndedScreenVisible and not isStartScreenVisible then
-                    task.wait(4) -- หน่วงเวลาให้โมเดลเกิดครบ
-                    hasPlayedThisRound = true
-                    PlayMacroData()
+                    task.wait(4)
+                    if isReplaying and not hasPlayedThisRound then
+                        hasPlayedThisRound = true
+                        PlayMacroData()
+                    end
                 end
             end
         end)
@@ -685,13 +581,12 @@ task.spawn(function()
 end)
 
 -- ============================================================================== --
--- // 8. เชื่อมปุ่ม (Event Handlers)
+-- // Event Handlers
 -- ============================================================================== --
 RecordToggle:OnChanged(function(val)
     if val then
         local fName = Options.MacroProfiles.Value
         local hasData = false
-
         if fName ~= "None" and isfile("SkibiMacroData/" .. fName .. ".json") then
             local content = readfile("SkibiMacroData/" .. fName .. ".json")
             if content and content ~= "" then
@@ -711,19 +606,16 @@ RecordToggle:OnChanged(function(val)
                     { Title = "ยกเลิก", Callback = function() RecordToggle:SetValue(false) end }
                 }
             })
-        else
-            StartRecordingProcess()
-        end
+        else StartRecordingProcess() end
     else
         if isRecording then
             isRecording = false
             UpdateStatus("Idle", "-", "-", "-", "-")
             Fluent:Notify({ Title = "Stopped", Content = "หยุดอัดมาโครแล้ว", Duration = 3 })
-            
             local fName = Options.MacroProfiles.Value
             if fName ~= "None" and actionCount > 0 then
-                 writefile("SkibiMacroData/" .. fName .. ".json", HttpService:JSONEncode(_G.MacroData or {}))
-                 Fluent:Notify({ Title = "Auto Saved", Content = "บันทึกข้อมูลลง " .. fName .. " อัตโนมัติ", Duration = 3 })
+                 writefile("SkibiMacroData/" .. fName .. ".json", HttpService:JSONEncode(_G_MacroData or {}))
+                 Fluent:Notify({ Title = "Auto Saved", Content = "บันทึกอัตโนมัติ", Duration = 3 })
             end
         end
     end
@@ -739,15 +631,15 @@ PlayToggle:OnChanged(function(val)
             return
         end
         
-        _G.MacroData = HttpService:JSONDecode(readfile("SkibiMacroData/" .. fName .. ".json"))
+        _G_MacroData = HttpService:JSONDecode(readfile("SkibiMacroData/" .. fName .. ".json"))
         actionCount = 0
-        for k, _ in pairs(_G.MacroData) do
+        for k, _ in pairs(_G_MacroData) do
             local num = tonumber(k)
             if num and num > actionCount then actionCount = num end
         end
         
         isReplaying = true
-        hasPlayedThisRound = true -- บังคับเริ่มเล่นในรอบปัจจุบันทันที
+        hasPlayedThisRound = true 
         PlayMacroData()
     else
         isReplaying = false
