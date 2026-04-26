@@ -418,13 +418,14 @@ local function StartRecordingProcess()
     StartObserving()
 end
 
--- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play) แบบ Classic + Fallback
--- ============================================================================== --
 local playInstanceMap = {} 
+local currentPlaybackSession = 0 -- 🔥 ตั๋วคิวเช็คการเล่นรอบปัจจุบัน (ป้องกันลูปเก่าตีกับลูปใหม่)
 
 local function PlayMacroData()
     if not isReplaying then return end
+    
+    currentPlaybackSession = currentPlaybackSession + 1
+    local mySession = currentPlaybackSession -- จำคิวของรอบนี้ไว้
     
     task.spawn(function()
         local useTime = Options.PlayModes.Value["Time"]
@@ -435,40 +436,42 @@ local function PlayMacroData()
         table.clear(playInstanceMap) 
 
         for i = 1, actionCount do
-            if not isReplaying then return end 
+            -- 🔥 ถ้ามีรอบใหม่เริ่มขึ้น ให้ทำลาย Thread เก่าทิ้งทันที
+            if not isReplaying or mySession ~= currentPlaybackSession then return end 
+            
             local step = _G.MacroData[tostring(i)]
             if not step then continue end
 
             local passed = 0
             while passed < customDelay do
-                if not isReplaying then return end
+                if not isReplaying or mySession ~= currentPlaybackSession then return end
                 UpdateStatus("Playing", i, step.type, step.unit, string.format("Buffer (%.1fs)", customDelay - passed))
                 task.wait(0.1); passed = passed + 0.1
             end
 
             if useTime then
                 while (tick() - playStartTime) < step.time do
-                    if not isReplaying then return end
+                    if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, string.format("Global Time (%.1fs)", step.time - (tick() - playStartTime)))
                     task.wait(0.1)
                 end
             end
             if useWave and step.wave then
                 while GetCurrentWave() < step.wave do
-                    if not isReplaying then return end
+                    if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Wave " .. step.wave)
                     task.wait(1)
                 end
             end
             if useMoney and step.cost and step.cost > 0 then
                 while GetCurrentMoney() < step.cost do
-                    if not isReplaying then return end
+                    if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. step.cost .. ")")
                     task.wait(0.5)
                 end
             end
             
-            if not isReplaying then return end 
+            if not isReplaying or mySession ~= currentPlaybackSession then return end 
             UpdateStatus("Playing", i, step.type, step.unit, "Executing...")
 
             local targetPosCf = nil
@@ -502,7 +505,6 @@ local function PlayMacroData()
                         end
                     end
                     
-                    -- 🔥 Fallback: ถ้ายังหาตัวใหม่ไม่เจอ ให้ใช้ระบบพิกัดคลาสสิกของ Testown 10 ชัวร์สุด
                     if not foundUnit then foundUnit = GetUnitByPosition(step.unit, targetPosCf) end
                     
                     if foundUnit then 
@@ -510,7 +512,7 @@ local function PlayMacroData()
                         playInstanceMap[step.targetID] = foundUnit 
                     end
                     attempts = attempts + 1
-                until isPlaced or attempts >= 15 or not isReplaying
+                until isPlaced or attempts >= 15 or not isReplaying or mySession ~= currentPlaybackSession
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
@@ -521,7 +523,6 @@ local function PlayMacroData()
                     local isUpgraded = false
                     local unitToUpgrade = playInstanceMap[step.targetID]
                     
-                    -- 🔥 ระบบคลาสสิก: ถ้าลืมเป้าหมาย ให้ค้นหาด้วยพิกัดตำแหน่งเหมือน Testown 10 รับรองไม่พลาด
                     if not unitToUpgrade or not unitToUpgrade.Parent then
                         unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
                         if unitToUpgrade then playInstanceMap[step.targetID] = unitToUpgrade end
@@ -531,7 +532,6 @@ local function PlayMacroData()
                         local currentIdStr = tostring(unitToUpgrade.Name)
                         local currentIdNum = tonumber(currentIdStr) or currentIdStr
                         
-                        -- บังคับยิง 1 รอบกันเหนียว
                         pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
                         
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
@@ -539,12 +539,12 @@ local function PlayMacroData()
                             isUpgraded = true
                         end
                     else
-                        isUpgraded = true -- ถ้ายูนิตโดนลบหรือหายไป ข้ามเลยจะได้ไม่บั๊กค้าง
+                        isUpgraded = true 
                     end
                     
                     task.wait(0.4)
                     attempts = attempts + 1
-                until isUpgraded or attempts >= 12 or not isReplaying
+                until isUpgraded or attempts >= 12 or not isReplaying or mySession ~= currentPlaybackSession
 
             elseif step.type == "Sell" then
                 local attempts = 0
@@ -560,11 +560,12 @@ local function PlayMacroData()
                         if not unitToSell.Parent then playInstanceMap[step.targetID] = nil break end
                     else break end
                     attempts = attempts + 1
-                until attempts >= 15 or not isReplaying
+                until attempts >= 15 or not isReplaying or mySession ~= currentPlaybackSession
             end
         end
         
-        if isReplaying then
+        -- โชว์ Notification เมื่อจบสเต็ปจริงๆ และไม่ใช่การโดนขัดจังหวะ
+        if isReplaying and mySession == currentPlaybackSession then
             UpdateStatus("Completed", "-", "-", "-", "Waiting for next match...")
             Fluent:Notify({ Title = "Complete", Content = "มาโครจบรอบนี้แล้ว! รอเริ่มรอบใหม่...", Duration = 5 })
         end
@@ -602,14 +603,18 @@ task.spawn(function()
     while task.wait(1) do
         pcall(function()
             -- 🎯 1. ระบบจับ Leaderstats (ความแม่นยำ 100% ในการเริ่มด่านใหม่)
+            -- 🎯 1. ระบบจับ Leaderstats (ความแม่นยำ 100% ในการเริ่มด่านใหม่)
             local currentLsInGame = LocalPlayer:FindFirstChild("leaderstats")
             if currentLsInGame and currentLsInGame ~= currentLeaderstats then
                 currentLeaderstats = currentLsInGame
                 hasPlayedThisRound = false 
                 table.clear(playInstanceMap) 
                 
+                -- 🔥 ไฮไลท์การแก้บั๊ก: อัพเดทตั๋วคิว เพื่อฆ่าลูปมาโครเก่าทิ้งทันทีที่โหลดแมพใหม่!
+                currentPlaybackSession = currentPlaybackSession + 1 
+                
                 if isReplaying then
-                    task.wait(4) -- หน่วงให้แมพโหลด
+                    task.wait(4) -- หน่วงให้แมพโหลดโมเดลครบก่อนลุย
                     hasPlayedThisRound = true
                     PlayMacroData()
                 end
