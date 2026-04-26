@@ -40,9 +40,23 @@ local Options = Fluent.Options
 local MoneyQueue = {}
 
 local function ParseMoney(val)
-    local cleanVal = string.gsub(tostring(val), ",", "")
-    local num = string.match(cleanVal, "%d+")
-    return num and tonumber(num) or 0
+    if not val then return 0 end
+    local cleanVal = string.upper(tostring(val))
+    cleanVal = string.gsub(cleanVal, ",", "")
+    cleanVal = string.gsub(cleanVal, "%$", "")
+    
+    -- ดึงตัวเลขและจุดทศนิยมออกมา (เช่น "1.1")
+    local numStr = string.match(cleanVal, "[%d%.]+") 
+    if not numStr then return 0 end
+    local num = tonumber(numStr) or 0
+    
+    -- แปลงหน่วยแบบครอบจักรวาล (1.1K = 1100)
+    if string.find(cleanVal, "K") then num = num * 1000
+    elseif string.find(cleanVal, "M") then num = num * 1000000
+    elseif string.find(cleanVal, "B") then num = num * 1000000000
+    elseif string.find(cleanVal, "T") then num = num * 1000000000000 end
+    
+    return math.floor(num)
 end
 
 local function GetCurrentMoney()
@@ -69,20 +83,32 @@ end
 -- // 🔥 ระบบ Auto Skip & Speed
 -- ============================================================================== --
 task.spawn(function()
-    while task.wait(1) do 
+    while task.wait(0.5) do -- เช็คไวขึ้นนิดนึง ทุกๆ ครึ่งวิ
         if Options.AutoSkip and Options.AutoSkip.Value then
             pcall(function()
-                local btn = LocalPlayer.PlayerGui.autoskip.auto
-                if btn.BackgroundColor3.R > btn.BackgroundColor3.G then
-                    if getconnections then
-                        for _, conn in pairs(getconnections(btn.MouseButton1Click)) do conn:Fire() end
-                        for _, conn in pairs(getconnections(btn.Activated)) do conn:Fire() end
-                    elseif firesignal then
-                        firesignal(btn.MouseButton1Click)
-                        firesignal(btn.Activated)
+                -- 🎯 ไอเดียไม้ตายของคุณ: ดักกดปุ่ม Y ตอน Popup โผล่
+                local skipGui = LocalPlayer.PlayerGui:FindFirstChild("skipWave")
+                if skipGui and skipGui:IsA("ScreenGui") and skipGui.Enabled then
+                    local frame = skipGui:FindFirstChild("Frame")
+                    if frame and frame.Visible then
+                        local yBtn = frame:FindFirstChild("Y")
+                        if yBtn and yBtn.Visible then
+                            -- ยิงคำสั่งจำลองการคลิกใส่ปุ่ม Y
+                            if getconnections then
+                                for _, conn in pairs(getconnections(yBtn.MouseButton1Click)) do conn:Fire() end
+                                for _, conn in pairs(getconnections(yBtn.Activated)) do conn:Fire() end
+                            elseif firesignal then
+                                firesignal(yBtn.MouseButton1Click)
+                                firesignal(yBtn.Activated)
+                            end
+                        end
                     end
-                    local eventFolder = ReplicatedStorage:FindFirstChild("Event")
-                    if eventFolder and eventFolder:FindFirstChild("waveSkip") then eventFolder.waveSkip:FireServer(true) end
+                end
+                
+                -- ยิง Remote สำรองยัด Server ไปด้วยเพื่อความชัวร์
+                local eventFolder = ReplicatedStorage:FindFirstChild("Event")
+                if eventFolder and eventFolder:FindFirstChild("waveSkip") then 
+                    eventFolder.waveSkip:FireServer(true) 
                 end
             end)
         end
