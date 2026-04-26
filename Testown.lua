@@ -361,19 +361,16 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
     local currentActionId = actionCount
     local currentWave = GetCurrentWave()
     
-    local targetLevel = 0
+    -- 🔥 เริ่มนับที่ 1 เสมอ เพราะยูนิตในเกมตอนวางคือ Level 1 (แก้บั๊กข้ามสเต็ปอัพเกรด)
+    local targetLevel = 1
     if actionType == "Place" then 
-        instanceToLevel[tostring(targetId)] = 0
+        instanceToLevel[tostring(targetId)] = 1
     elseif actionType == "Upgrade" then 
-        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 0) + 1 
+        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 1) + 1 
         targetLevel = instanceToLevel[tostring(targetId)]
     end
     
-    -- 🔥 ถอดการเช็ค Level จาก TowerData ออก เพราะเกมดึงข้อมูลช้าทำให้เซฟ Level ผิดเป็น 0
-    -- บังคับใช้ targetLevel ที่เรานับเอง ชัวร์สุด 100%
-    local actualLevel = targetLevel
-    
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = actualLevel }
+    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = targetLevel }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
@@ -551,27 +548,30 @@ local function PlayMacroData()
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
-                -- 🔥 เซฟตี้: ถ้าไฟล์เก่าบั๊กเป็น 0 ให้ดันเป็น 1 อย่างต่ำ
-                local targetLvl = step.level or 1
-                if targetLvl == 0 then targetLvl = 1 end 
+                local targetLvl = step.level or 2
+                if targetLvl <= 1 then targetLvl = 2 end -- ขั้นต่ำของการอัพเกรดคือไปเลเวล 2 เสมอ
+                
+                local idStr = tostring(step.targetID)
+                local idNum = tonumber(idStr) or idStr
+                
+                -- 🔥 บังคับยิงคำสั่งอัพเกรดทันที 1 ครั้งแบบไม่ต้องเช็ค (แก้บั๊กยูนิตเลเวลเหลื่อมแล้วไม่ยอมอัพ)
+                pcall(function() UpgradeRemote:FireServer(idNum) end)
+                task.wait(0.3)
                 
                 repeat
                     local isUpgraded = false
-                    local idStr = tostring(step.targetID)
-                    
-                    -- 🔥 เช็คสถานะอัพเกรดจาก "TowerData" โดยตรงด้วย ID
                     local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
                     
                     if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
                         isUpgraded = true
                     else
-                        local idNum = tonumber(idStr) or idStr
+                        -- ถ้ายิงไปแล้วยังไม่ได้อัพ (เช่น ติดดีเลย์เซิร์ฟเวอร์) ให้ย้ำเข้าไปอีก
                         pcall(function() UpgradeRemote:FireServer(idNum) end)
                     end
                     
                     task.wait(0.4)
                     attempts = attempts + 1
-                until isUpgraded or attempts >= 15 or not isReplaying
+                until isUpgraded or attempts >= 12 or not isReplaying
 
             elseif step.type == "Sell" then
                 local attempts = 0
