@@ -291,10 +291,11 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record) - 🔥 Database Observer (แก้อาการอัพเกรดข้าม 100%)
+-- // 6. ลอจิกการอัด (Record) - 🔥 Database Observer (ใส่เกราะกันยิงเบิ้ล)
 -- ============================================================================== --
 local cachedPos = {}
 local cachedName = {}
+local lastUpgRecord = {} -- 🔥 ตัวจำเวลาอัพเกรดล่าสุด (แก้บั๊กยิงเบิ้ล)
 
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
@@ -336,21 +337,24 @@ local function StartObserving()
 
     table.clear(cachedPos)
     table.clear(cachedName)
+    table.clear(lastUpgRecord)
 
-    -- 🔥 ฟังก์ชันดักจับ "การอัพเกรด" จาก Database ของเกมโดยตรง (แม่นยำที่สุด)
+    -- 🔥 ฟังก์ชันดักจับ "การอัพเกรด" จาก Database ของเกมโดยตรง
     local function hookTowerData(tDataObj)
         local upgConn = tDataObj:GetAttributeChangedSignal("Upgrade"):Connect(function()
             if not isRecording then return end
-            local exactTime = tick() - recordStartTime
             local targetId = tDataObj.Name
             
-            -- ดึงเลเวลที่แท้จริงจากตัวเกม ณ วินาทีนั้น
+            -- 🔥 เกราะป้องกัน: ถ้าสัญญาณมาถี่กว่า 0.6 วินาที ให้ปัดทิ้งทันที (ป้องกันเลเวลเด้งเป็น 9)
+            if lastUpgRecord[targetId] and (tick() - lastUpgRecord[targetId]) < 0.6 then return end
+            lastUpgRecord[targetId] = tick()
+            
+            local exactTime = tick() - recordStartTime
             local currentLvl = tonumber(tDataObj:GetAttribute("Upgrade")) or 2
             
             local posCf = cachedPos[targetId]
             local unitName = cachedName[targetId] or "Unknown"
             
-            -- สำรองดึงพิกัดใหม่ถ้าใน Cache หาย
             if not posCf then
                 local unitModel = towersFolder:FindFirstChild(targetId)
                 if unitModel then 
@@ -364,10 +368,9 @@ local function StartObserving()
         table.insert(activeConnections, upgConn)
     end
 
-    -- 🔥 ฟังก์ชันดักจับ "การวางตัว"
     local addConn = towerDataFolder.ChildAdded:Connect(function(tDataObj)
         if not isRecording then return end
-        task.wait(0.2) -- หน่วงให้ 3D Model เกิดขึ้นมาก่อน
+        task.wait(0.2) 
         
         local exactTime = tick() - recordStartTime
         local targetId = tDataObj.Name
@@ -377,16 +380,15 @@ local function StartObserving()
             local posCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
             local unitName = GetRealUnitName(unitModel)
             
-            -- จำค่าลง Cache เพื่อใช้ตอนขาย/อัพเกรด
             cachedPos[targetId] = posCf
             cachedName[targetId] = unitName
+            lastUpgRecord[targetId] = tick() -- ล็อคเวลาตอนวาง
             
             RecordAction("Place", targetId, posCf, unitName, exactTime, 1)
             hookTowerData(tDataObj)
         end
     end)
     
-    -- 🔥 ฟังก์ชันดักจับ "การขาย"
     local remConn = towerDataFolder.ChildRemoved:Connect(function(tDataObj)
         if not isRecording then return end
         local exactTime = tick() - recordStartTime
@@ -398,12 +400,12 @@ local function StartObserving()
         
         cachedPos[targetId] = nil
         cachedName[targetId] = nil
+        lastUpgRecord[targetId] = nil
     end)
     
     table.insert(activeConnections, addConn)
     table.insert(activeConnections, remConn)
 
-    -- ผูกระบบดักจับเข้ากับยูนิตที่มีอยู่แล้วบนกระดาน (ถ้ามี)
     for _, child in ipairs(towerDataFolder:GetChildren()) do
         hookTowerData(child)
     end
@@ -414,7 +416,7 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ดักข้อมูลระดับ Database)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ป้องกันเป้าหมายเบิ้ลแล้ว)", Duration = 3 })
     StartObserving()
 end
 
@@ -524,6 +526,7 @@ local function PlayMacroData()
                     local unitToUpgrade = playInstanceMap[step.targetID]
                     
                     if not unitToUpgrade or not unitToUpgrade.Parent then
+                        -- ลดรัศมีค้นหาลงเพื่อป้องกันการอัพผิดตัวถ้าวางติดกันเกินไป
                         unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
                         if unitToUpgrade then playInstanceMap[step.targetID] = unitToUpgrade end
                     end
@@ -535,7 +538,12 @@ local function PlayMacroData()
                         pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
                         
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                        
                         if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
+                            isUpgraded = true
+                        elseif attempts >= 6 then
+                            -- 🔥 ทะลวงลูป: ถ้ายิงย้ำไป 6 รอบ (ประมาณ 2.5 วินาที) แล้วไม่ได้ผล
+                            -- บังคับข้ามสเต็ปนี้ทันที เพื่อรักษาจังหวะเวลาของสเต็ปอื่นๆ ไม่ให้รวน!
                             isUpgraded = true
                         end
                     else
@@ -544,7 +552,7 @@ local function PlayMacroData()
                     
                     task.wait(0.4)
                     attempts = attempts + 1
-                until isUpgraded or attempts >= 12 or not isReplaying or mySession ~= currentPlaybackSession
+                until isUpgraded or not isReplaying or mySession ~= currentPlaybackSession
 
             elseif step.type == "Sell" then
                 local attempts = 0
