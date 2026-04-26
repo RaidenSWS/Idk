@@ -459,10 +459,11 @@ local function StartRecordingProcess()
     StartObserving()
 end
 
--- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play)
--- ============================================================================== --
+local playInstanceMap = {} -- 🔥 ย้ายมาไว้ข้างนอกเพื่อให้ระบบอื่นสั่งล้างค่าได้
+
 local function PlayMacroData()
+    if not isReplaying then return end
+    
     task.spawn(function()
         local useTime = Options.PlayModes.Value["Time"]
         local useWave = Options.PlayModes.Value["Wave"]
@@ -470,12 +471,15 @@ local function PlayMacroData()
         local customDelay = Options.StepDelay.Value
         
         local playStartTime = tick()
+        -- 🧹 ล้างหน่วยความจำยูนิตเก่าทิ้งก่อนเริ่มเล่นรอบใหม่
+        table.clear(playInstanceMap) 
 
         for i = 1, actionCount do
             if not isReplaying then return end 
             local step = _G.MacroData[tostring(i)]
             if not step then continue end
 
+            -- ดีเลย์ระหว่าง Step
             local passed = 0
             while passed < customDelay do
                 if not isReplaying then return end
@@ -483,6 +487,7 @@ local function PlayMacroData()
                 task.wait(0.1); passed = passed + 0.1
             end
 
+            -- รอเงื่อนไข (Time/Wave/Money)
             if useTime then
                 while (tick() - playStartTime) < step.time do
                     if not isReplaying then return end
@@ -490,7 +495,6 @@ local function PlayMacroData()
                     task.wait(0.1)
                 end
             end
-
             if useWave and step.wave then
                 while GetCurrentWave() < step.wave do
                     if not isReplaying then return end
@@ -498,7 +502,6 @@ local function PlayMacroData()
                     task.wait(1)
                 end
             end
-
             if useMoney and step.cost and step.cost > 0 then
                 while GetCurrentMoney() < step.cost do
                     if not isReplaying then return end
@@ -522,8 +525,31 @@ local function PlayMacroData()
                 local attempts = 0
                 repeat
                     pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
-                    task.wait(0.2)
-                    if GetUnitByPosition(step.unit, targetPosCf) then isPlaced = true end
+                    task.wait(0.5) -- 🔥 เพิ่มดีเลย์รอให้เซิร์ฟเวอร์วางของ
+                    
+                    -- ตรวจสอบการวางสำเร็จด้วยระบบล็อคเป้า
+                    local foundUnit = nil
+                    local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+                    if targetFolder then
+                        for _, unit in ipairs(targetFolder:GetChildren()) do
+                            -- เช็คว่ายูนิตนี้เป็นตัวใหม่ที่ยังไม่มีใครจอง (ไม่งั้นจะไปจำตัวเก่าแล้วข้าม Step)
+                            local alreadyOwned = false
+                            for _, v in pairs(playInstanceMap) do if v == unit then alreadyOwned = true break end end
+                            
+                            if not alreadyOwned and (string.find(unit.Name, step.unit) or string.find(unit:GetAttribute("sID") or "", step.unit)) then
+                                local cf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
+                                if (cf.Position - targetPosCf.Position).Magnitude <= 3 then
+                                    foundUnit = unit
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    
+                    if foundUnit then 
+                        isPlaced = true 
+                        playInstanceMap[step.targetID] = foundUnit 
+                    end
                     attempts = attempts + 1
                 until isPlaced or attempts >= 15 or not isReplaying
 
@@ -532,102 +558,99 @@ local function PlayMacroData()
                 local targetLvl = step.level or 1
                 repeat
                     local isUpgraded = false
-                    local unitToUpgrade = GetUnitByPosition(step.unit, targetPosCf)
+                    local unitToUpgrade = playInstanceMap[step.targetID] -- อ้างอิงจากตัวที่วางไปในสเต็ปก่อนหน้าเท่านั้น
                     
                     if unitToUpgrade then
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(unitToUpgrade.Name)
                         if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
                             isUpgraded = true
                         else
-                            local idNum = tonumber(unitToUpgrade.Name)
-                            if idNum then pcall(function() UpgradeRemote:FireServer(idNum) end) else pcall(function() UpgradeRemote:FireServer(unitToUpgrade.Name) end) end
+                            local id = tonumber(unitToUpgrade.Name) or unitToUpgrade.Name
+                            pcall(function() UpgradeRemote:FireServer(id) end)
                         end
+                    else
+                        isUpgraded = true -- ข้ามถ้าหายูนิตไม่เจอจริงๆ
                     end
-                    
-                    task.wait(0.2)
+                    task.wait(0.4)
                     attempts = attempts + 1
                 until isUpgraded or attempts >= 15 or not isReplaying
 
             elseif step.type == "Sell" then
                 local attempts = 0
                 repeat
-                    local unitToSell = GetUnitByPosition(step.unit, targetPosCf)
+                    local unitToSell = playInstanceMap[step.targetID]
                     if unitToSell then
-                        local idNum = tonumber(unitToSell.Name)
-                        if idNum then pcall(function() SellRemote:FireServer(idNum) end) else pcall(function() SellRemote:FireServer(unitToSell.Name) end) end
-                    end
-                    task.wait(0.2)
+                        local id = tonumber(unitToSell.Name) or unitToSell.Name
+                        pcall(function() SellRemote:FireServer(id) end)
+                        task.wait(0.4)
+                        if not unitToSell.Parent then playInstanceMap[step.targetID] = nil break end
+                    else break end
                     attempts = attempts + 1
-                until GetUnitByPosition(step.unit, targetPosCf) == nil or attempts >= 15 or not isReplaying
+                until attempts >= 15 or not isReplaying
             end
         end
         
-        -- [อัปเดต] ไม่ปิด Play ทิ้ง เพื่อรอวนลูปรอบหน้า
         if isReplaying then
             UpdateStatus("Completed", "-", "-", "-", "Waiting for next match...")
-            Fluent:Notify({ Title = "Complete", Content = "มาโครจบรอบนี้แล้ว! รอเริ่มเกมตาใหม่...", Duration = 5 })
+            Fluent:Notify({ Title = "Complete", Content = "มาโครจบรอบนี้แล้ว! รอเริ่มรอบใหม่...", Duration = 5 })
         end
     end)
 end
 
 local hasPlayedThisRound = false
 -- ============================================================================== --
--- // 🔥 ระบบ Automation Core (Auto Replay / Auto Ready / Smart Loop / Auto Save)
+-- // 🔥 ระบบ Automation Core (Smart Reset & Sync Loop)
 -- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม (Auto Replay & Auto Save)
+            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม
             local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
             local isEndedScreenVisible = false
             
-            if gameEndedGui then
-                if (gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled) or (gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible) then
-                    local frame = gameEndedGui:FindFirstChild("Frame")
-                    if frame and frame.Visible then
-                        isEndedScreenVisible = true
-                        local replayBtn = frame:FindFirstChild("replay")
-                        if replayBtn and replayBtn.Visible then
-                            hasPlayedThisRound = false -- ปลดล็อคสถานะ เพื่อเตรียมรันรอบหน้า
-                            if Options.RecordMacro and Options.RecordMacro.Value then
-                                Options.RecordMacro:SetValue(false)
-                                Fluent:Notify({ Title = "Match Ended", Content = "จบด่าน! เซฟมาโครให้อัตโนมัติ", Duration = 5 })
-                            end
-                            if Options.AutoReplay and Options.AutoReplay.Value then
-                                task.wait(3) -- 🔥 หน่วงเวลา 3 วิ ก่อนกด Replay เพื่อความเสถียร
-                                ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
-                            end
+            if gameEndedGui and ((gameEndedGui:IsA("ScreenGui") and gameEndedGui.Enabled) or (gameEndedGui:IsA("GuiObject") and gameEndedGui.Visible)) then
+                local frame = gameEndedGui:FindFirstChild("Frame")
+                if frame and frame.Visible then
+                    isEndedScreenVisible = true
+                    if frame:FindFirstChild("replay") and frame.replay.Visible then
+                        -- 🧹 ล้างสถานะเมื่อจบเกม
+                        hasPlayedThisRound = false 
+                        table.clear(playInstanceMap) 
+                        
+                        if Options.RecordMacro and Options.RecordMacro.Value then
+                            Options.RecordMacro:SetValue(false)
+                        end
+                        if Options.AutoReplay and Options.AutoReplay.Value then
+                            task.wait(3) -- หน่วงเวลา 3 วิ
+                            ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
                         end
                     end
                 end
             end
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready)
+            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Ready)
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
             local isStartScreenVisible = false
             
-            if startGui then
-                if (startGui:IsA("ScreenGui") and startGui.Enabled) or (startGui:IsA("GuiObject") and startGui.Visible) then
-                    local frame = startGui:FindFirstChild("Frame")
-                    if frame and frame.Visible then
-                        isStartScreenVisible = true
-                        local startBtn = frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
-                        if startBtn and startBtn.Visible then
-                            hasPlayedThisRound = false -- บังคับปลดล็อคป้องกันค้าง
-                            if Options.AutoReady and Options.AutoReady.Value then
-                                task.wait(2) -- 🔥 หน่วงเวลา 2 วิ ก่อนกด Ready ไม่ให้ไวเกินไป
-                                ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
-                            end
-                        end
+            if startGui and ((startGui:IsA("ScreenGui") and startGui.Enabled) or (startGui:IsA("GuiObject") and startGui.Visible)) then
+                local frame = startGui:FindFirstChild("Frame")
+                if frame and frame.Visible then
+                    isStartScreenVisible = true
+                    -- 🧹 เมื่อเจอหน้า Ready ให้การันตีว่าสถานะต้องเป็น False เสมอ
+                    hasPlayedThisRound = false 
+                    
+                    if Options.AutoReady and Options.AutoReady.Value then
+                        task.wait(3) -- 🔥 หน่วงเวลา 3 วิ ให้ทุกอย่างโหลดนิ่งก่อนกด Ready
+                        ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
                     end
                 end
             end
 
-            -- 🎯 3. ระบบ Infinite Loop:
+            -- 🎯 3. ระบบ Infinite Loop: จะเริ่มเล่นก็ต่อเมื่อ "Ready หายไปแล้ว" และ "เริ่มด่านแล้ว"
             if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
-                -- 🔥 เช็คความชัวร์: ต้องไม่มีหน้าจอ Replay และหน้าจอ Ready ค้างอยู่บนจอ
+                -- ต้องมั่นใจว่า UI ทั้งหมด (จบเกม/หน้าเริ่ม) หายไปจากจอแล้วจริงๆ
                 if not isEndedScreenVisible and not isStartScreenVisible then
-                    task.wait(5) -- 🔥 หน่วงเวลาเพิ่ม 5 วิ หลัง Ready หายไป เพื่อให้เกมโหลด Map/Units เสร็จ 100%
+                    task.wait(5) -- 🔥 หน่วงเวลา 5 วิ เพื่อให้หน้าจอ Ready หายไปสนิทและแมพโหลดครบ
                     hasPlayedThisRound = true
                     PlayMacroData()
                 end
