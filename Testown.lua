@@ -369,13 +369,9 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
         targetLevel = instanceToLevel[tostring(targetId)]
     end
     
+    -- 🔥 ถอดการเช็ค Level จาก TowerData ออก เพราะเกมดึงข้อมูลช้าทำให้เซฟ Level ผิดเป็น 0
+    -- บังคับใช้ targetLevel ที่เรานับเอง ชัวร์สุด 100%
     local actualLevel = targetLevel
-    pcall(function()
-        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(tostring(targetId))
-        if tData and tData:GetAttribute("Upgrade") then
-            actualLevel = tonumber(tData:GetAttribute("Upgrade"))
-        end
-    end)
     
     local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = actualLevel }
     if posCf then stepData.pos = FormatCFrame(posCf) end
@@ -555,25 +551,47 @@ local function PlayMacroData()
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
+                -- 🔥 เซฟตี้: ถ้าคุณเผลอเอาไฟล์เก่ามาเล่นแล้วมันบั๊กเป็น 0 ให้ดันเป็น 1 อย่างต่ำ
                 local targetLvl = step.level or 1
+                if targetLvl == 0 then targetLvl = 1 end 
+                
                 repeat
                     local isUpgraded = false
-                    local unitToUpgrade = playInstanceMap[step.targetID] -- อ้างอิงจากตัวที่วางไปในสเต็ปก่อนหน้าเท่านั้น
+                    local idStr = tostring(step.targetID)
                     
-                    if unitToUpgrade then
-                        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(unitToUpgrade.Name)
-                        if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
-                            isUpgraded = true
-                        else
-                            local id = tonumber(unitToUpgrade.Name) or unitToUpgrade.Name
-                            pcall(function() UpgradeRemote:FireServer(id) end)
-                        end
+                    -- 🔥 เช็คสถานะอัพเกรดจาก "TowerData" โดยตรงด้วย ID (ไม่ต้องง้อโมเดลตัวละคร)
+                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
+                    
+                    if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
+                        isUpgraded = true
                     else
-                        isUpgraded = true -- ข้ามถ้าหายูนิตไม่เจอจริงๆ
+                        local idNum = tonumber(idStr) or idStr
+                        pcall(function() UpgradeRemote:FireServer(idNum) end)
                     end
+                    
                     task.wait(0.4)
                     attempts = attempts + 1
                 until isUpgraded or attempts >= 15 or not isReplaying
+
+            elseif step.type == "Sell" then
+                local attempts = 0
+                local idStr = tostring(step.targetID)
+                
+                repeat
+                    -- 🔥 ยิงคำสั่งขายโดยใช้ ID ตรงๆ
+                    local idNum = tonumber(idStr) or idStr
+                    pcall(function() SellRemote:FireServer(idNum) end)
+                    task.wait(0.4)
+                    
+                    -- เช็คว่าขายสำเร็จไหม โดยดูว่าข้อมูลใน TowerData หายไปหรือยัง
+                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
+                    if not tData then 
+                        playInstanceMap[step.targetID] = nil 
+                        break 
+                    end
+                    
+                    attempts = attempts + 1
+                until attempts >= 15 or not isReplaying
 
             elseif step.type == "Sell" then
                 local attempts = 0
