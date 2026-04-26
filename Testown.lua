@@ -520,12 +520,10 @@ local function PlayMacroData()
                     pcall(function() PlaceRemote:FireServer(step.unit, targetPosCf, false) end)
                     task.wait(0.5) -- 🔥 เพิ่มดีเลย์รอให้เซิร์ฟเวอร์วางของ
                     
-                    -- ตรวจสอบการวางสำเร็จด้วยระบบล็อคเป้า
                     local foundUnit = nil
                     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
                     if targetFolder then
                         for _, unit in ipairs(targetFolder:GetChildren()) do
-                            -- เช็คว่ายูนิตนี้เป็นตัวใหม่ที่ยังไม่มีใครจอง
                             local alreadyOwned = false
                             for _, v in pairs(playInstanceMap) do if v == unit then alreadyOwned = true break end end
                             
@@ -549,49 +547,55 @@ local function PlayMacroData()
             elseif step.type == "Upgrade" then
                 local attempts = 0
                 local targetLvl = step.level or 2
-                if targetLvl <= 1 then targetLvl = 2 end -- ขั้นต่ำของการอัพเกรดคือไปเลเวล 2 เสมอ
+                if targetLvl <= 1 then targetLvl = 2 end 
                 
-                local idStr = tostring(step.targetID)
-                local idNum = tonumber(idStr) or idStr
+                -- 🔥 จุดที่แก้บั๊ก 100%: ต้องใช้โมเดลในกระดานปัจจุบัน ไม่ใช่ ID เก่า
+                local unitToUpgrade = playInstanceMap[step.targetID]
                 
-                -- 🔥 บังคับยิงคำสั่งอัพเกรดทันที 1 ครั้งแบบไม่ต้องเช็ค (แก้บั๊กยูนิตเลเวลเหลื่อมแล้วไม่ยอมอัพ)
-                pcall(function() UpgradeRemote:FireServer(idNum) end)
-                task.wait(0.3)
-                
-                repeat
-                    local isUpgraded = false
-                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
+                if unitToUpgrade then
+                    local currentIdStr = tostring(unitToUpgrade.Name)
+                    local currentIdNum = tonumber(currentIdStr) or currentIdStr
                     
-                    if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
-                        isUpgraded = true
-                    else
-                        -- ถ้ายิงไปแล้วยังไม่ได้อัพ (เช่น ติดดีเลย์เซิร์ฟเวอร์) ให้ย้ำเข้าไปอีก
-                        pcall(function() UpgradeRemote:FireServer(idNum) end)
-                    end
+                    pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
+                    task.wait(0.3)
                     
-                    task.wait(0.4)
-                    attempts = attempts + 1
-                until isUpgraded or attempts >= 12 or not isReplaying
+                    repeat
+                        local isUpgraded = false
+                        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                        
+                        if tData and tData:GetAttribute("Upgrade") and tonumber(tData:GetAttribute("Upgrade")) >= targetLvl then
+                            isUpgraded = true
+                        else
+                            pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
+                        end
+                        
+                        task.wait(0.4)
+                        attempts = attempts + 1
+                    until isUpgraded or attempts >= 12 or not isReplaying
+                end
 
             elseif step.type == "Sell" then
                 local attempts = 0
-                local idStr = tostring(step.targetID)
+                -- 🔥 จุดที่แก้บั๊ก: อ้างอิงตัวที่จะขายจากกระดานปัจจุบันเช่นกัน
+                local unitToSell = playInstanceMap[step.targetID]
                 
-                repeat
-                    -- 🔥 ยิงคำสั่งขายโดยใช้ ID ตรงๆ
-                    local idNum = tonumber(idStr) or idStr
-                    pcall(function() SellRemote:FireServer(idNum) end)
-                    task.wait(0.4)
+                if unitToSell then
+                    local currentIdStr = tostring(unitToSell.Name)
+                    local currentIdNum = tonumber(currentIdStr) or currentIdStr
                     
-                    -- เช็คว่าขายสำเร็จไหม โดยดูว่าข้อมูลใน TowerData หายไปหรือยัง
-                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
-                    if not tData then 
-                        playInstanceMap[step.targetID] = nil 
-                        break 
-                    end
-                    
-                    attempts = attempts + 1
-                until attempts >= 15 or not isReplaying
+                    repeat
+                        pcall(function() SellRemote:FireServer(currentIdNum) end)
+                        task.wait(0.4)
+                        
+                        local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                        if not tData then 
+                            playInstanceMap[step.targetID] = nil 
+                            break 
+                        end
+                        
+                        attempts = attempts + 1
+                    until attempts >= 15 or not isReplaying
+                end
             end
         end
         
@@ -603,25 +607,31 @@ local function PlayMacroData()
 end
 
 local hasPlayedThisRound = false
-local currentLeaderstats = nil -- ตัวเก็บความจำ Leaderstats
+local lastSeenWave = 0 -- 🔥 ตัวช่วยจำ Wave
 
 -- ============================================================================== --
--- // 🔥 ระบบ Automation Core (Smart Sync & Infinite Loop)
+-- // 🔥 ระบบ Automation Core (Triple Safety Reset Loop)
 -- ============================================================================== --
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            -- 🎯 0. ระบบจับ Leaderstats เกิดใหม่ (เซฟตี้ชั้นที่ 1)
-            local currentLsInGame = LocalPlayer:FindFirstChild("leaderstats")
-            if currentLsInGame and currentLsInGame ~= currentLeaderstats then
-                currentLeaderstats = currentLsInGame
-                hasPlayedThisRound = false 
-                table.clear(playInstanceMap) 
-            elseif not currentLsInGame then
-                currentLeaderstats = nil
+            local currentWaveNum = GetCurrentWave()
+            
+            -- 🎯 1. เช็ค Wave ย้อนกลับ (ถ้าย้อนกลับมา Wave 1 แปลว่าขึ้นเกมใหม่ 100%)
+            if currentWaveNum < lastSeenWave then
+                hasPlayedThisRound = false
+                table.clear(playInstanceMap)
+            end
+            lastSeenWave = currentWaveNum
+
+            -- 🎯 2. เช็คจำนวนยูนิตบนกระดาน (ถ้าหายเกลี้ยงแปลว่ารีเซ็ตด่าน)
+            local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+            if targetFolder and #targetFolder:GetChildren() == 0 and hasPlayedThisRound then
+                hasPlayedThisRound = false
+                table.clear(playInstanceMap)
             end
 
-            -- 🎯 1. ตรวจจับหน้าจอตอนจบเกม
+            -- 🎯 3. ตรวจจับหน้าจอตอนจบเกม
             local gameEndedGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
             local isEndedScreenVisible = false
             
@@ -644,7 +654,7 @@ task.spawn(function()
                 end
             end
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนเริ่มเกม (Ready)
+            -- 🎯 4. ตรวจจับหน้าจอตอนเริ่มเกม (Ready)
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
             local isStartScreenVisible = false
             
@@ -661,11 +671,11 @@ task.spawn(function()
                 end
             end
             
-            -- 🎯 3. ระบบ Infinite Loop (ปลุกชีพ!): ตัวการันตีว่าตาใหม่ต้องเล่นชัวร์ 100%
-            if isReplaying and not hasPlayedThisRound and GetCurrentWave() >= 1 then
-                -- ต้องเช็คให้ชัวร์ว่า UI เริ่มเกมและจบเกม หายไปจากหน้าจอหมดแล้ว
+            -- 🎯 5. ระบบ Infinite Loop (รันสเต็ปอัตโนมัติ)
+            if isReplaying and not hasPlayedThisRound and currentWaveNum >= 1 then
+                -- เช็คให้ชัวร์ว่า UI บังจอหายไปหมดแล้ว
                 if not isEndedScreenVisible and not isStartScreenVisible then
-                    task.wait(4) -- 🔥 หน่วงเวลา 4 วิ ให้เกมโหลดโมเดลแมพเสร็จสมบูรณ์
+                    task.wait(4) -- หน่วงเวลาให้โมเดลเกิดครบ
                     hasPlayedThisRound = true
                     PlayMacroData()
                 end
