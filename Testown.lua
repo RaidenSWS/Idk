@@ -597,45 +597,40 @@ local function IsTrulyVisible(gui)
 end
 
 -- ============================================================================== --
--- // 🔥 ระบบ Automation Core ( Leaderstats Trigger + Smart Auto Save )
+-- // 🔥 ระบบ Automation Core ( Wave Trigger & UI Sync )
 -- ============================================================================== --
+local hasPlayedThisRound = false
+local lastSeenWave = 0
+
 task.spawn(function()
     while task.wait(1) do
         pcall(function()
-            -- 🎯 1. ระบบจับ Leaderstats (ความแม่นยำ 100% ในการเริ่มด่านใหม่)
-            -- 🎯 1. ระบบจับ Leaderstats (ความแม่นยำ 100% ในการเริ่มด่านใหม่)
-            local currentLsInGame = LocalPlayer:FindFirstChild("leaderstats")
-            if currentLsInGame and currentLsInGame ~= currentLeaderstats then
-                currentLeaderstats = currentLsInGame
+            local currentWaveNum = GetCurrentWave()
+            
+            -- 🎯 1. เช็คถอยหลัง: ถ้าระดับ Wave ลดลง (เช่นจบด่าน 20 กลับมาเริ่ม 1 ใหม่)
+            if currentWaveNum < lastSeenWave then
                 hasPlayedThisRound = false 
                 table.clear(playInstanceMap) 
-                
-                -- 🔥 ไฮไลท์การแก้บั๊ก: อัพเดทตั๋วคิว เพื่อฆ่าลูปมาโครเก่าทิ้งทันทีที่โหลดแมพใหม่!
-                currentPlaybackSession = currentPlaybackSession + 1 
-                
-                if isReplaying then
-                    task.wait(4) -- หน่วงให้แมพโหลดโมเดลครบก่อนลุย
-                    hasPlayedThisRound = true
-                    PlayMacroData()
-                end
-            elseif not currentLsInGame then
-                currentLeaderstats = nil
+                currentPlaybackSession = currentPlaybackSession + 1 -- ฆ่าสเต็ปเก่าทิ้งทันที
             end
+            lastSeenWave = currentWaveNum
 
-            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกม (Auto Stop Record & Replay)
+            -- 🎯 2. ตรวจจับหน้าจอตอนจบเกม (Auto Stop & Replay)
             local endGui = LocalPlayer.PlayerGui:FindFirstChild("GameEnded")
+            local isEndedVisible = false
             if endGui then
                 local frame = endGui:FindFirstChild("Frame")
                 local replayBtn = frame and frame:FindFirstChild("replay")
                 
-                -- 🔥 ใช้ฟังก์ชันคำนวณพิกัด: กล่องต้องโผล่มากลางจอจริงๆ ถึงจะทำงาน
                 if IsTrulyVisible(frame) and IsTrulyVisible(replayBtn) then
+                    isEndedVisible = true
+                    hasPlayedThisRound = false 
+                    table.clear(playInstanceMap)
+                    currentPlaybackSession = currentPlaybackSession + 1 -- ล้างสมองรอตาต่อไป
                     
-                    -- หยุด Record และเซฟไฟล์อัตโนมัติเมื่อจบเกม
                     if Options.RecordMacro and Options.RecordMacro.Value then
                         Options.RecordMacro:SetValue(false)
                     end
-                    
                     if Options.AutoReplay and Options.AutoReplay.Value then
                         task.wait(3) 
                         ReplicatedStorage.Event:WaitForChild("ReplayCore"):FireServer()
@@ -645,15 +640,34 @@ task.spawn(function()
 
             -- 🎯 3. ตรวจจับหน้าจอตอนเริ่มเกม (Auto Ready)
             local startGui = LocalPlayer.PlayerGui:FindFirstChild("StartUI")
+            local isStartVisible = false
             if startGui then
                 local frame = startGui:FindFirstChild("Frame")
                 local startBtn = frame and frame:FindFirstChild("Labels") and frame.Labels:FindFirstChild("startbutton")
                 
-                -- 🔥 ใช้ฟังก์ชันคำนวณพิกัด: กล่อง Ready ต้องโผล่มากลางจอจริงๆ
                 if IsTrulyVisible(frame) and IsTrulyVisible(startBtn) then
+                    isStartVisible = true
+                    hasPlayedThisRound = false 
+                    table.clear(playInstanceMap)
+                    currentPlaybackSession = currentPlaybackSession + 1 -- การันตีว่าตั๋วคิวใหม่พร้อมรัน
+                    
                     if Options.AutoReady and Options.AutoReady.Value then
                         task.wait(3) 
                         ReplicatedStorage:WaitForChild("GAME_START"):WaitForChild("readyButton"):FireServer(true)
+                    end
+                end
+            end
+            
+            -- 🎯 4. ตัวจุดชนวน Play Macro (ทำงานเมื่อทุกอย่างเคลียร์และเริ่มเกมแล้ว)
+            if isReplaying and not hasPlayedThisRound and currentWaveNum >= 1 then
+                -- ต้องมั่นใจว่า UI หน้าเริ่ม/จบ หายไปจากจอหมดแล้วจริงๆ
+                if not isEndedVisible and not isStartVisible then
+                    task.wait(4) -- หน่วงให้แมพโหลดโมเดลครบ 4 วินาที
+                    
+                    -- เช็คซ้ำอีกรอบกันเหนียว
+                    if not hasPlayedThisRound then
+                        hasPlayedThisRound = true
+                        PlayMacroData()
                     end
                 end
             end
