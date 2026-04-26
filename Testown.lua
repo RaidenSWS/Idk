@@ -572,26 +572,6 @@ local function PlayMacroData()
                     task.wait(0.4)
                     attempts = attempts + 1
                 until isUpgraded or attempts >= 15 or not isReplaying
-
-            elseif step.type == "Sell" then
-                local attempts = 0
-                local idStr = tostring(step.targetID)
-                
-                repeat
-                    -- 🔥 ยิงคำสั่งขายโดยใช้ ID ตรงๆ
-                    local idNum = tonumber(idStr) or idStr
-                    pcall(function() SellRemote:FireServer(idNum) end)
-                    task.wait(0.4)
-                    
-                    -- เช็คว่าขายสำเร็จไหม โดยดูว่าข้อมูลใน TowerData หายไปหรือยัง
-                    local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(idStr)
-                    if not tData then 
-                        playInstanceMap[step.targetID] = nil 
-                        break 
-                    end
-                    
-                    attempts = attempts + 1
-                until attempts >= 15 or not isReplaying
         
         if isReplaying then
             UpdateStatus("Completed", "-", "-", "-", "Waiting for next match...")
