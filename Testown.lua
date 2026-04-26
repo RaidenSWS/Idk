@@ -291,28 +291,29 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record)
+-- // 6. ลอจิกการอัด (Record) - 🔥 Database Observer (แก้อาการอัพเกรดข้าม 100%)
 -- ============================================================================== --
-local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
+local cachedPos = {}
+local cachedName = {}
+
+local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
     local currentActionId = actionCount
-    local currentWave = GetCurrentWave()
     
-    -- นัล Level ที่ 1 เสมอ แก้บั๊ก 0
-    local targetLevel = 1
-    if actionType == "Place" then 
-        instanceToLevel[tostring(targetId)] = 1
-    elseif actionType == "Upgrade" then 
-        instanceToLevel[tostring(targetId)] = (instanceToLevel[tostring(targetId)] or 1) + 1 
-        targetLevel = instanceToLevel[tostring(targetId)]
-    end
-    
-    local stepData = { type = actionType, targetID = tostring(targetId), time = exactTime, wave = currentWave, unit = unitName, cost = 0, level = targetLevel }
+    local stepData = { 
+        type = actionType, 
+        targetID = tostring(targetId), 
+        time = exactTime, 
+        wave = GetCurrentWave(), 
+        unit = unitName, 
+        cost = 0, 
+        level = specificLevel or 1 
+    }
     if posCf then stepData.pos = FormatCFrame(posCf) end
     _G.MacroData[tostring(currentActionId)] = stepData
 
     task.spawn(function()
-        local exactCost = GetExactCost(unitName, actionType, targetLevel)
+        local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
         if exactCost == 0 and actionType ~= "Sell" then
             local passTime = 0
             while passTime < 1.5 do
@@ -324,56 +325,88 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime)
             end
         end
         stepData.cost = exactCost
-        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost)
+        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost .. " | Lvl: " .. (specificLevel or 1))
     end)
 end
 
 local function StartObserving()
-    local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
-    if not targetFolder then return end
+    local towerDataFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData")
+    local towersFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
+    if not towerDataFolder or not towersFolder then return end
 
-    local addConn = targetFolder.ChildAdded:Connect(function(newTower)
-        if not isRecording or not newTower:IsA("Model") then return end
-        local exactTime = tick() - recordStartTime 
-        task.wait(0.05) 
+    table.clear(cachedPos)
+    table.clear(cachedName)
+
+    -- 🔥 ฟังก์ชันดักจับ "การอัพเกรด" จาก Database ของเกมโดยตรง (แม่นยำที่สุด)
+    local function hookTowerData(tDataObj)
+        local upgConn = tDataObj:GetAttributeChangedSignal("Upgrade"):Connect(function()
+            if not isRecording then return end
+            local exactTime = tick() - recordStartTime
+            local targetId = tDataObj.Name
+            
+            -- ดึงเลเวลที่แท้จริงจากตัวเกม ณ วินาทีนั้น
+            local currentLvl = tonumber(tDataObj:GetAttribute("Upgrade")) or 2
+            
+            local posCf = cachedPos[targetId]
+            local unitName = cachedName[targetId] or "Unknown"
+            
+            -- สำรองดึงพิกัดใหม่ถ้าใน Cache หาย
+            if not posCf then
+                local unitModel = towersFolder:FindFirstChild(targetId)
+                if unitModel then 
+                    posCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
+                    unitName = GetRealUnitName(unitModel)
+                end
+            end
+            
+            RecordAction("Upgrade", targetId, posCf, unitName, exactTime, currentLvl)
+        end)
+        table.insert(activeConnections, upgConn)
+    end
+
+    -- 🔥 ฟังก์ชันดักจับ "การวางตัว"
+    local addConn = towerDataFolder.ChildAdded:Connect(function(tDataObj)
+        if not isRecording then return end
+        task.wait(0.2) -- หน่วงให้ 3D Model เกิดขึ้นมาก่อน
         
-        local posCf = newTower.PrimaryPart and newTower.PrimaryPart.CFrame or newTower:GetModelCFrame()
-        local posKey = GetPosKey(posCf.Position)
-        local unitName = GetRealUnitName(newTower)
-        local targetId = newTower.Name
+        local exactTime = tick() - recordStartTime
+        local targetId = tDataObj.Name
+        local unitModel = towersFolder:FindFirstChild(targetId)
         
-        if posToId[posKey] then
-            local oldId = posToId[posKey]
-            instanceToId[newTower] = oldId
-            RecordAction("Upgrade", oldId, posCf, unitName, exactTime)
-        else
-            posToId[posKey] = targetId
-            instanceToId[newTower] = targetId
-            RecordAction("Place", targetId, posCf, unitName, exactTime)
+        if unitModel then
+            local posCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
+            local unitName = GetRealUnitName(unitModel)
+            
+            -- จำค่าลง Cache เพื่อใช้ตอนขาย/อัพเกรด
+            cachedPos[targetId] = posCf
+            cachedName[targetId] = unitName
+            
+            RecordAction("Place", targetId, posCf, unitName, exactTime, 1)
+            hookTowerData(tDataObj)
         end
     end)
     
-    local remConn = targetFolder.ChildRemoved:Connect(function(oldTower)
+    -- 🔥 ฟังก์ชันดักจับ "การขาย"
+    local remConn = towerDataFolder.ChildRemoved:Connect(function(tDataObj)
         if not isRecording then return end
-        local exactTime = tick() - recordStartTime 
-        local targetId = instanceToId[oldTower]
-        local posCf = oldTower.PrimaryPart and oldTower.PrimaryPart.CFrame or oldTower:GetModelCFrame()
+        local exactTime = tick() - recordStartTime
+        local targetId = tDataObj.Name
+        local posCf = cachedPos[targetId]
+        local unitName = cachedName[targetId] or "Unknown"
         
-        if targetId then
-            task.delay(0.4, function()
-                local isUpgraded = false
-                for inst, id in pairs(instanceToId) do if inst.Parent ~= nil and id == targetId then isUpgraded = true break end end
-                if not isUpgraded then
-                    RecordAction("Sell", targetId, posCf, GetRealUnitName(oldTower), exactTime)
-                    posToId[GetPosKey(posCf.Position)] = nil
-                end
-                instanceToId[oldTower] = nil
-            end)
-        end
+        RecordAction("Sell", targetId, posCf, unitName, exactTime, 0)
+        
+        cachedPos[targetId] = nil
+        cachedName[targetId] = nil
     end)
     
     table.insert(activeConnections, addConn)
     table.insert(activeConnections, remConn)
+
+    -- ผูกระบบดักจับเข้ากับยูนิตที่มีอยู่แล้วบนกระดาน (ถ้ามี)
+    for _, child in ipairs(towerDataFolder:GetChildren()) do
+        hookTowerData(child)
+    end
 end
 
 local function StartRecordingProcess()
@@ -381,7 +414,7 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ปลอดภัย 100%)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ดักข้อมูลระดับ Database)", Duration = 3 })
     StartObserving()
 end
 
