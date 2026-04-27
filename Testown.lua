@@ -324,11 +324,12 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record)
+-- // 6. ลอจิกการอัด (Record) 🔥 ดักจับ Network แม่นยำ 100%
 -- ============================================================================== --
 local cachedPos = {}
 local cachedName = {}
 local lastUpgRecord = {}
+local lastRecordedSpeed = -1 -- 🔥 ตัวแปรเก็บสปีด
 
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
@@ -348,7 +349,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
-        if exactCost == 0 and actionType ~= "Sell" then
+        if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then
             local passTime = 0
             while passTime < 1.5 do
                 for _, drop in ipairs(MoneyQueue) do
@@ -359,9 +360,34 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
             end
         end
         stepData.cost = exactCost
-        UpdateStatus("Recording", currentActionId, actionType, unitName, "Cost: $" .. exactCost .. " | Lvl: " .. (specificLevel or 1))
+        
+        local displayWait = "Cost: $" .. exactCost .. " | Lvl: " .. (specificLevel or 1)
+        if actionType == "Speed" then displayWait = "Speed set to " .. (specificLevel == 0 and "Pause" or specificLevel.."x") end
+        UpdateStatus("Recording", currentActionId, actionType, unitName, displayWait)
     end)
 end
+
+-- 🔥 วิชาสายแฮกเกอร์: ดักจับสัญญาณเปลี่ยนสปีดที่ส่งไปเซิร์ฟเวอร์
+local oldNamecall
+oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+    local method = getnamecallmethod()
+    
+    if isRecording and method == "FireServer" then
+        if self.Name == "Change" and self.Parent and self.Parent.Name == "Speed" then
+            local args = {...}
+            local speedVal = tonumber(args[1]) or 0
+            
+            task.spawn(function()
+                if lastRecordedSpeed ~= speedVal then
+                    lastRecordedSpeed = speedVal
+                    local exactTime = tick() - recordStartTime
+                    RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, speedVal)
+                end
+            end)
+        end
+    end
+    return oldNamecall(self, ...)
+end))
 
 local function StartObserving()
     local towerDataFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData")
@@ -446,12 +472,12 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (V29 Final God Mode)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ดักจับสัญญาณสปีด 100%)", Duration = 3 })
     StartObserving()
 end
 
 -- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play) 🔥 ยกระดับความอดทนเป็น 40 วินาที
+-- // 7. ลอจิกการเล่น (Play) 🔥 รองรับการเล่นสปีด
 -- ============================================================================== --
 local playInstanceMap = {} 
 local currentPlaybackSession = 0 
@@ -499,7 +525,7 @@ local function PlayMacroData()
             end
             
             local requiredMoney = ParseMoney(step.cost)
-            if useMoney and requiredMoney > 0 then
+            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then
                 while GetCurrentMoney() < requiredMoney do
                     if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. requiredMoney .. ")")
@@ -516,8 +542,19 @@ local function PlayMacroData()
                 for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
                 targetPosCf = CFrame.new(unpack(p))
             end
+            
+            -- 🔥 ระบบรันคำสั่งสปีดเกมตอน Play
+            if step.type == "Speed" then
+                local targetSpeed = tonumber(step.level) or 1
+                pcall(function()
+                    local gameRs = ReplicatedStorage:FindFirstChild("Game")
+                    if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then 
+                        gameRs.Speed.Change:FireServer(targetSpeed) 
+                    end
+                end)
+                task.wait(0.2)
 
-            if step.type == "Place" then
+            elseif step.type == "Place" then
                 local isPlaced = false
                 local attempts = 0
                 repeat
@@ -557,7 +594,6 @@ local function PlayMacroData()
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
-                -- 🔥 เคารพไฟล์ 100% ไม่บังคับเป็นเลเวล 2 แล้ว! บันทึกมา 1 ก็รอ 1
                 local targetLvl = tonumber(step.level) or 1 
                 
                 repeat
@@ -585,7 +621,6 @@ local function PlayMacroData()
                         end
                     end
                     
-                    -- 🔥 ขยายเวลารอเป็น 100 รอบ (ประมาณ 40 วินาที) เผื่อเงินขาดมือ มันจะนั่งรอให้จนกว่าจะกดติด
                     if not isUpgraded and attempts >= 100 then
                         isUpgraded = true 
                     end
