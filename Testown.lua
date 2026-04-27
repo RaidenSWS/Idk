@@ -324,12 +324,11 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record) 🔥 Safe UI Speed Observer (ปลอดภัย 100% ไม่โดนแบน)
+-- // 6. ลอจิกการอัด (Record)
 -- ============================================================================== --
 local cachedPos = {}
 local cachedName = {}
 local lastUpgRecord = {}
-local lastRecordedSpeed = -1 -- 🔥 ตัวเก็บสปีด
 
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
@@ -349,6 +348,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
+        -- 🔥 ป้องกันการยืนรอเงินถ้าเป็นคำสั่งเปลี่ยนสปีด
         if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then
             local passTime = 0
             while passTime < 1.5 do
@@ -375,40 +375,6 @@ local function StartObserving()
     table.clear(cachedPos)
     table.clear(cachedName)
     table.clear(lastUpgRecord)
-
-    -- 🔥 ปลอดภัย 100%: ลูปแอบดูการเปิด/ปิด UI สปีด แทนการแฮกหลังบ้าน
-    task.spawn(function()
-        lastRecordedSpeed = -1
-        while isRecording do
-            task.wait(0.2)
-            pcall(function()
-                local currentSpeed = -1
-                local towersGui = LocalPlayer.PlayerGui:FindFirstChild("Towers")
-                if towersGui then
-                    local speedBtn = towersGui:FindFirstChild("speedButton")
-                    if speedBtn then
-                        if speedBtn:FindFirstChild("Pause") and speedBtn.Pause.Visible then currentSpeed = 0
-                        else
-                            for i = 1, 5 do
-                                local child = speedBtn:FindFirstChild(tostring(i).."x")
-                                if child and child:IsA("GuiObject") and child.Visible then currentSpeed = i break end
-                            end
-                        end
-                    end
-                end
-                
-                if currentSpeed ~= -1 then
-                    if lastRecordedSpeed == -1 then 
-                        lastRecordedSpeed = currentSpeed 
-                    elseif currentSpeed ~= lastRecordedSpeed then
-                        local exactTime = tick() - recordStartTime
-                        RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, currentSpeed)
-                        lastRecordedSpeed = currentSpeed
-                    end
-                end
-            end)
-        end
-    end)
 
     local function hookTowerData(tDataObj)
         local upgConn = tDataObj:GetAttributeChangedSignal("Upgrade"):Connect(function()
@@ -484,12 +450,12 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบจำสปีดแบบปลอดภัย 100%)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบจำสปีดพร้อมทำงาน)", Duration = 3 })
     StartObserving()
 end
 
 -- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play) 🔥 รองรับสปีดเกมแบบปลอดภัย
+-- // 7. ลอจิกการเล่น (Play) 🔥 รองรับการปรับสปีดอัตโนมัติ
 -- ============================================================================== --
 local playInstanceMap = {} 
 local currentPlaybackSession = 0 
@@ -537,7 +503,7 @@ local function PlayMacroData()
             end
             
             local requiredMoney = ParseMoney(step.cost)
-            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then -- 🔥 สปีดไม่ต้องรอเงิน
+            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then
                 while GetCurrentMoney() < requiredMoney do
                     if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. requiredMoney .. ")")
@@ -555,7 +521,7 @@ local function PlayMacroData()
                 targetPosCf = CFrame.new(unpack(p))
             end
 
-            -- 🔥 ระบบสั่งปรับสปีดตอน Play
+            -- 🔥 ระบบสั่งเปลี่ยนสปีด
             if step.type == "Speed" then
                 local targetSpeed = tonumber(step.level) or 1
                 pcall(function()
@@ -832,5 +798,30 @@ PlayToggle:OnChanged(function(val)
         isReplaying = false
         hasPlayedThisRound = false
         UpdateStatus("Idle", "-", "-", "-", "Stopped manually")
+    end
+end)
+
+-- 🔥 ตัวจำสปีดแบบปลอดภัย: กดปรับจาก UI มาโครตอน Record ได้เลย!
+Options.AutoSpeed:OnChanged(function(val)
+    if val == "Off" then return end
+    
+    local desiredSpeed = 1
+    if val == "Pause" then desiredSpeed = 0 
+    elseif string.match(val, "%d+") then desiredSpeed = tonumber(string.match(val, "%d+")) 
+    end
+    
+    -- บังคับเปลี่ยนสปีดในเกมทันที
+    pcall(function()
+        local gameRs = ReplicatedStorage:FindFirstChild("Game")
+        if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then 
+            gameRs.Speed.Change:FireServer(desiredSpeed) 
+        end
+    end)
+    
+    -- ถ้าเปิดอัดมาโครอยู่ ให้จดจำลงไฟล์ทันที
+    if isRecording then
+        local exactTime = tick() - recordStartTime
+        RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, desiredSpeed)
+        Fluent:Notify({ Title = "Speed Recorded", Content = "บันทึกสปีด: " .. val .. " เรียบร้อย!", Duration = 2 })
     end
 end)
