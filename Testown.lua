@@ -324,12 +324,12 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record) 🔥 ดักจับ Network แม่นยำ 100%
+-- // 6. ลอจิกการอัด (Record) 🔥 ดักจับ Network สปีดเกม
 -- ============================================================================== --
 local cachedPos = {}
 local cachedName = {}
 local lastUpgRecord = {}
-local lastRecordedSpeed = -1 -- 🔥 ตัวแปรเก็บสปีด
+local lastRecordedSpeed = -1 -- 🔥 เพิ่มตัวแปรเก็บสปีด
 
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
@@ -349,7 +349,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
-        if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then
+        if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then -- 🔥 ข้ามเช็คเงินถ้าปรับสปีด
             local passTime = 0
             while passTime < 1.5 do
                 for _, drop in ipairs(MoneyQueue) do
@@ -367,7 +367,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
     end)
 end
 
--- 🔥 วิชาสายแฮกเกอร์: ดักจับสัญญาณเปลี่ยนสปีดที่ส่งไปเซิร์ฟเวอร์
+-- 🔥 วิชาสายแฮกเกอร์: ดักจับสัญญาณเปลี่ยนสปีดที่ถูกส่งไปเซิร์ฟเวอร์โดยตรง
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
     local method = getnamecallmethod()
@@ -472,7 +472,7 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ดักจับสัญญาณสปีด 100%)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบดักสปีดทำงาน)", Duration = 3 })
     StartObserving()
 end
 
@@ -525,7 +525,7 @@ local function PlayMacroData()
             end
             
             local requiredMoney = ParseMoney(step.cost)
-            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then
+            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then -- 🔥 สปีดไม่ต้องรอเงิน
                 while GetCurrentMoney() < requiredMoney do
                     if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. requiredMoney .. ")")
@@ -542,8 +542,8 @@ local function PlayMacroData()
                 for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
                 targetPosCf = CFrame.new(unpack(p))
             end
-            
-            -- 🔥 ระบบรันคำสั่งสปีดเกมตอน Play
+
+            -- 🔥 ระบบรันคำสั่งสปีดเกม
             if step.type == "Speed" then
                 local targetSpeed = tonumber(step.level) or 1
                 pcall(function()
