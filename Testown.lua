@@ -1,6 +1,6 @@
 -- ============================================================================== --
--- // SKIBI DEFENSE - FLUENT MACRO EDITION V29 (FINAL GOD MODE)
--- // Fixes: Exact Money Parsing, Pure Level Sync, 40s Patience Timeout
+-- // SKIBI DEFENSE - FLUENT MACRO EDITION V29 [FIXED]
+-- // Fixes: AstroJugg Distance Limit, CFrame %d Bug, Safe Speed Recording
 -- ============================================================================== --
 
 local Players = game:GetService("Players")
@@ -19,8 +19,8 @@ local SellRemote = EventFolder:WaitForChild("RemoveTower")
 -- ============================================================================== --
 local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 local Window = Fluent:CreateWindow({
-    Title = "Skibi Macro V29",
-    SubTitle = "Final God Mode",
+    Title = "Skibi Macro V29 Fix",
+    SubTitle = "Astro Jugg Edition",
     TabWidth = 160,
     Size = UDim2.fromOffset(500, 480),
     Acrylic = false,
@@ -35,7 +35,7 @@ local Tabs = {
 local Options = Fluent.Options
 
 -- ============================================================================== --
--- // 2. Helper Functions (🔥 ระบบดึงเงินแบบ Exact Value แม่นยำ 100%)
+-- // 2. Helper Functions
 -- ============================================================================== --
 local MoneyQueue = {}
 
@@ -58,7 +58,6 @@ local function ParseMoney(val)
 end
 
 local function GetCurrentMoney()
-    -- 🔥 ดึงจาก Leaderstats ก่อน จะได้เลขเป๊ะๆ แบบไม่ย่อ (เช่น 4216718 แทนที่จะเป็น 4.2M)
     local exactMoney = nil
     pcall(function()
         local ls = LocalPlayer:FindFirstChild("leaderstats")
@@ -70,7 +69,6 @@ local function GetCurrentMoney()
     end)
     if exactMoney then return exactMoney end
     
-    -- สำรองดึงจาก GUI
     local guiMoney = 0
     pcall(function() guiMoney = ParseMoney(LocalPlayer.PlayerGui.Towers.Cash.Frame.TextLabel.Text) end)
     return guiMoney
@@ -93,7 +91,7 @@ local function GetUnitByPosition(targetName, targetPosCf)
     if not targetPosCf or not targetName then return nil end
     local targetPos = targetPosCf.Position
     local bestUnit = nil
-    local closestDist = 35 -- 🔥 เพิ่มระยะให้ไททันตัวใหญ่แบบสุดๆ (35 Block)
+    local closestDist = 999999 -- 🔥 ปลดล็อคระยะให้ยานฟ้า Astro Jugg โดยเฉพาะ!
     local searchName = CleanStr(targetName)
 
     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
@@ -118,10 +116,13 @@ local function GetUnitByPosition(targetName, targetPosCf)
 end
 
 local function GetPosKey(pos) return string.format("%.1f_%.1f", pos.X, pos.Z) end
+
+-- 🔥 แก้บั๊ก CFrame: เปลี่ยนเป็น %f ทั้งหมด เพื่อเก็บทศนิยมของมุมหมุน ไม่ให้มันกลายเป็นเลข 0 ล้วนๆ
 local function FormatCFrame(cf)
     local x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22 = cf:components()
-    return string.format("%f, %f, %f, %d, %d, %d, %d, %d, %d, %d, %d, %d", x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
+    return string.format("%f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f, %f", x, y, z, r00, r01, r02, r10, r11, r12, r20, r21, r22)
 end
+
 local function GetRealUnitName(towerModel)
     local sID = towerModel:GetAttribute("sID")
     if sID and sID ~= "" then return sID end
@@ -230,8 +231,6 @@ local isRecording = false
 local isReplaying = false
 local recordStartTime = 0
 local actionCount = 0
-local instanceToId = {}
-local posToId = {}
 local activeConnections = {}
 
 local function ClearConnections()
@@ -242,34 +241,49 @@ end
 local function WipeRecordingState()
     _G.MacroData = {}
     actionCount = 0
-    instanceToId = {}
-    posToId = {}
     for k in pairs(MoneyQueue) do MoneyQueue[k] = nil end 
     recordStartTime = tick()
     ClearConnections()
 end
 
-local function GetExactCost(unitName, actionType, upgradeLevel)
-    if actionType == "Sell" then return 0 end
+-- 🔥 THE INDEX FIX: ซ่อมระบบดึงราคาอัพเกรดให้ตรงช่องของฐานข้อมูลเกม
+local function GetExactCost(unitName, actionType, targetLevel)
+    if actionType == "Sell" or actionType == "Speed" then return 0 end
     local cost = 0
     pcall(function()
         local rs = game:GetService("ReplicatedStorage")
-        local towerData = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
-        if towerData then
-            local module = towerData:FindFirstChild(unitName) or towerData:FindFirstChild(unitName.."Unit")
+        local td = rs:FindFirstChild("TowerData") and rs.TowerData:FindFirstChild("Units")
+        if td then
+            local searchName = CleanStr(unitName)
+            local module = nil
+            for _, child in ipairs(td:GetChildren()) do
+                if CleanStr(child.Name) == searchName or CleanStr(child.Name) == searchName.."unit" then
+                    module = child
+                    break
+                end
+            end
+            
             if module then
                 local data = require(module)
-                if actionType == "Place" then cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
+                if actionType == "Place" then 
+                    cost = data.Price or data.Cost or data.BasePrice or data.DeployCost or 0
                 elseif actionType == "Upgrade" and data.Upgrades then
-                    local upg = data.Upgrades[upgradeLevel]
-                    if upg then cost = upg.Price or upg.Cost or upg.UpgradeCost or 0 end
+                    -- 🚀 เกมส่วนใหญ่: อัพไปเวล 4 ต้องใช้ข้อมูลในช่อง 3
+                    local idx = tonumber(targetLevel) - 1
+                    if idx < 1 then idx = 1 end
+                    
+                    local upg = data.Upgrades[idx] or data.Upgrades[targetLevel] or data.Upgrades[tostring(idx)]
+                    if type(upg) == "number" then
+                        cost = upg
+                    elseif type(upg) == "table" then
+                        cost = upg.Price or upg.Cost or upg.UpgradeCost or 0
+                    end
                 end
             end
         end
     end)
     return cost
 end
-
 -- ============================================================================== --
 -- // 5. สร้าง UI หน้า Main 
 -- ============================================================================== --
@@ -319,7 +333,7 @@ local AutoReplayToggle = Tabs.Main:AddToggle("AutoReplay", {Title = "Auto Replay
 local AutoReadyToggle = Tabs.Main:AddToggle("AutoReady", {Title = "Auto Ready", Default = false })
 local RecordToggle = Tabs.Main:AddToggle("RecordMacro", {Title = "Record Macro", Default = false })
 local PlayToggle = Tabs.Main:AddToggle("PlayMacro", {Title = "Play Macro", Default = false })
-local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
+local AutoSpeedDrop = Tabs.Main:AddDropdown("AutoSpeed", { Title = "Auto Speed Lock (Record Speed Here!)", Values = {"Off", "Pause", "1x", "2x", "3x", "4x", "5x"}, Default = 1 })
 Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.1, Max = 5, Rounding = 1 })
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
@@ -348,7 +362,6 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
-        -- 🔥 ป้องกันการยืนรอเงินถ้าเป็นคำสั่งเปลี่ยนสปีด
         if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then
             local passTime = 0
             while passTime < 1.5 do
@@ -366,6 +379,16 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
         UpdateStatus("Recording", currentActionId, actionType, unitName, displayWait)
     end)
 end
+
+local mouse = LocalPlayer:GetMouse()
+local lastGroundPos = nil
+
+-- 🔥 ดักเมาส์: ให้จำพิกัดที่คลิกบนพื้นดินเตรียมไว้
+game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 and not gpe then
+        pcall(function() lastGroundPos = mouse.Hit.Position end)
+    end
+end)
 
 local function StartObserving()
     local towerDataFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData")
@@ -389,6 +412,7 @@ local function StartObserving()
             local posCf = cachedPos[targetId]
             local unitName = cachedName[targetId] or "Unknown"
             
+            -- 🔥 ตอน Upgrade: ให้จำพิกัดตัวโมเดลปกติ
             if not posCf then
                 local unitModel = towersFolder:FindFirstChild(targetId)
                 if unitModel then 
@@ -409,18 +433,24 @@ local function StartObserving()
         local exactTime = tick() - recordStartTime
         local targetId = tDataObj.Name
         local unitModel = towersFolder:FindFirstChild(targetId)
+        local unitName = unitModel and GetRealUnitName(unitModel) or "Unknown"
         
-        if unitModel then
-            local posCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
-            local unitName = GetRealUnitName(unitModel)
-            
-            cachedPos[targetId] = posCf
-            cachedName[targetId] = unitName
-            lastUpgRecord[targetId] = 1 
-            
-            RecordAction("Place", targetId, posCf, unitName, exactTime, 1)
-            hookTowerData(tDataObj)
+        -- 🔥 ตอน Place: บังคับใช้พิกัดจากพื้นดิน (ไม่มีแกนหมุนมั่วๆ แบบที่พี่บอกเป๊ะ!)
+        local posCf = CFrame.new(0,0,0)
+        if lastGroundPos then
+            posCf = CFrame.new(lastGroundPos.X, lastGroundPos.Y, lastGroundPos.Z)
+            lastGroundPos = nil -- เคลียร์ค่าทิ้ง
+        elseif unitModel then
+            local mCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
+            posCf = CFrame.new(mCf.X, mCf.Y, mCf.Z)
         end
+        
+        cachedPos[targetId] = posCf
+        cachedName[targetId] = unitName
+        lastUpgRecord[targetId] = 1 
+        
+        RecordAction("Place", targetId, posCf, unitName, exactTime, 1)
+        hookTowerData(tDataObj)
     end)
     
     local remConn = towerDataFolder.ChildRemoved:Connect(function(tDataObj)
@@ -429,7 +459,6 @@ local function StartObserving()
         local targetId = tDataObj.Name
         local posCf = cachedPos[targetId]
         local unitName = cachedName[targetId] or "Unknown"
-        
         RecordAction("Sell", targetId, posCf, unitName, exactTime, 0)
         
         cachedPos[targetId] = nil
@@ -450,12 +479,12 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบจำสปีดพร้อมทำงาน)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (V29 Astro Jugg Fix)", Duration = 3 })
     StartObserving()
 end
 
 -- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play) 🔥 รองรับการปรับสปีดอัตโนมัติ
+-- // 7. ลอจิกการเล่น (Play) 🔥 ซ่อมระบบข้ามเงิน และเพิ่ม Status แจ้งเตือน
 -- ============================================================================== --
 local playInstanceMap = {} 
 local currentPlaybackSession = 0 
@@ -503,8 +532,15 @@ local function PlayMacroData()
             end
             
             local requiredMoney = ParseMoney(step.cost)
-            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then
-                while GetCurrentMoney() < requiredMoney do
+            
+            -- 🔥 THE ZERO-COST REPAIR: ถ้าราคาเป็น 0 ให้ดึงข้อมูลมาซ่อมใหม่
+            if requiredMoney <= 0 and step.type ~= "Sell" and step.type ~= "Speed" then
+                requiredMoney = GetExactCost(step.unit, step.type, step.level)
+            end
+
+            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then 
+                local margin = requiredMoney * 0.05
+                while GetCurrentMoney() < (requiredMoney - margin) do
                     if not isReplaying or mySession ~= currentPlaybackSession then return end
                     UpdateStatus("Playing", i, step.type, step.unit, "Money ($" .. requiredMoney .. ")")
                     task.wait(0.5)
@@ -518,10 +554,19 @@ local function PlayMacroData()
             if step.pos then
                 local p = {}
                 for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
-                targetPosCf = CFrame.new(unpack(p))
+                
+                -- 🔥 แยกการดึงพิกัดตามไอเดียพี่เลยครับ!
+                pcall(function()
+                    if step.type == "Place" then
+                        -- ตอนวาง: เอาแค่ X, Y, Z บริสุทธิ์ ไม่มีแกนหมุนมาเกะกะ (เกมจะได้ไม่บล็อก AstroJugg)
+                        targetPosCf = CFrame.new(p[1] or 0, p[2] or 0, p[3] or 0)
+                    else
+                        -- ตอนอัพเกรด/ขาย: ดึงมาเต็มๆ ปกติ
+                        targetPosCf = CFrame.new(unpack(p))
+                    end
+                end)
             end
 
-            -- 🔥 ระบบสั่งเปลี่ยนสปีด
             if step.type == "Speed" then
                 local targetSpeed = tonumber(step.level) or 1
                 pcall(function()
@@ -543,6 +588,8 @@ local function PlayMacroData()
                     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
                     if targetFolder then
                         local searchNameClean = CleanStr(step.unit)
+                        local bestDist = 999999 
+                        local bestUnit = nil
                         for _, unit in ipairs(targetFolder:GetChildren()) do
                             local alreadyOwned = false
                             for _, v in pairs(playInstanceMap) do if v == unit then alreadyOwned = true break end end
@@ -552,13 +599,18 @@ local function PlayMacroData()
                                 local sIdClean = CleanStr(unit:GetAttribute("sID") or "")
                                 if string.find(uNameClean, searchNameClean, 1, true) or string.find(sIdClean, searchNameClean, 1, true) then
                                     local cf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
-                                    if cf and (cf.Position - targetPosCf.Position).Magnitude <= 35 then
-                                        foundUnit = unit
-                                        break
+                                    if cf and targetPosCf then
+                                        -- เรดาร์ 2D ไม่สนความสูง
+                                        local dist = math.sqrt((cf.Position.X - targetPosCf.Position.X)^2 + (cf.Position.Z - targetPosCf.Position.Z)^2)
+                                        if dist < bestDist then
+                                            bestDist = dist
+                                            bestUnit = unit
+                                        end
                                     end
                                 end
                             end
                         end
+                        if bestUnit then foundUnit = bestUnit end
                     end
                     
                     if not foundUnit then foundUnit = GetUnitByPosition(step.unit, targetPosCf) end
@@ -567,8 +619,12 @@ local function PlayMacroData()
                         isPlaced = true 
                         playInstanceMap[step.targetID] = foundUnit 
                     end
+                    
+                    if not isPlaced then
+                        UpdateStatus("Playing", i, step.type, step.unit, "Spamming Place (" .. attempts .. "/600)")
+                    end
                     attempts = attempts + 1
-                until isPlaced or attempts >= 100 or not isReplaying or mySession ~= currentPlaybackSession
+                until isPlaced or attempts >= 600 or not isReplaying or mySession ~= currentPlaybackSession
 
             elseif step.type == "Upgrade" then
                 local attempts = 0
@@ -585,12 +641,12 @@ local function PlayMacroData()
                     
                     if unitToUpgrade then
                         local currentIdStr = tostring(unitToUpgrade.Name)
-                        local currentIdNum = tonumber(currentIdStr) or currentIdStr
+                        local currentIdNum = tonumber(currentIdStr)
                         
-                        pcall(function() UpgradeRemote:FireServer(currentIdNum) end)
+                        pcall(function() UpgradeRemote:FireServer(currentIdStr) end)
+                        if currentIdNum then pcall(function() UpgradeRemote:FireServer(currentIdNum) end) end
                         
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
-                        
                         if tData then
                             local currentUpgrades = tonumber(tData:GetAttribute("Upgrade")) or 0
                             if currentUpgrades >= targetLvl then
@@ -599,11 +655,13 @@ local function PlayMacroData()
                         end
                     end
                     
-                    if not isUpgraded and attempts >= 100 then
-                        isUpgraded = true 
-                    end
+                    if not isUpgraded and attempts >= 600 then isUpgraded = true end
                     
-                    if not isUpgraded then task.wait(0.4) end
+                    -- 🔥 อัพเดท Status ให้รู้ว่าทำไมถึงค้าง (มักจะเกิดจากรอเงินเด้ง)
+                    if not isUpgraded then 
+                        UpdateStatus("Playing", i, step.type, step.unit, "Spamming Upg (Wait Money/Lag? " .. attempts .. "/600)")
+                        task.wait(0.4) 
+                    end
                     attempts = attempts + 1
                 until isUpgraded or not isReplaying or mySession ~= currentPlaybackSession
 
@@ -616,8 +674,11 @@ local function PlayMacroData()
                     
                     if unitToSell then
                         local currentIdStr = tostring(unitToSell.Name)
-                        local currentIdNum = tonumber(currentIdStr) or currentIdStr
-                        pcall(function() SellRemote:FireServer(currentIdNum) end)
+                        local currentIdNum = tonumber(currentIdStr)
+                        
+                        pcall(function() SellRemote:FireServer(currentIdStr) end)
+                        if currentIdNum then pcall(function() SellRemote:FireServer(currentIdNum) end) end
+                        
                         task.wait(0.4)
                         if not unitToSell.Parent then 
                             playInstanceMap[step.targetID] = nil 
@@ -625,7 +686,7 @@ local function PlayMacroData()
                         end
                     end
                     
-                    if not isSold and attempts >= 100 then isSold = true end
+                    if not isSold and attempts >= 600 then isSold = true end
                     if not isSold then task.wait(0.4) end
                     attempts = attempts + 1
                 until isSold or not isReplaying or mySession ~= currentPlaybackSession
@@ -801,7 +862,7 @@ PlayToggle:OnChanged(function(val)
     end
 end)
 
--- 🔥 ตัวจำสปีดแบบปลอดภัย: กดปรับจาก UI มาโครตอน Record ได้เลย!
+-- 🔥 ตัวจำสปีดแบบปลอดภัย: กดปรับจาก UI มาโครตอน Record ได้เลย (เกมไม่แบน 100%)
 Options.AutoSpeed:OnChanged(function(val)
     if val == "Off" then return end
     
@@ -810,7 +871,7 @@ Options.AutoSpeed:OnChanged(function(val)
     elseif string.match(val, "%d+") then desiredSpeed = tonumber(string.match(val, "%d+")) 
     end
     
-    -- บังคับเปลี่ยนสปีดในเกมทันที
+    -- បังคับเปลี่ยนสปีดในเกมทันที
     pcall(function()
         local gameRs = ReplicatedStorage:FindFirstChild("Game")
         if gameRs and gameRs:FindFirstChild("Speed") and gameRs.Speed:FindFirstChild("Change") then 
@@ -818,10 +879,10 @@ Options.AutoSpeed:OnChanged(function(val)
         end
     end)
     
-    -- ถ้าเปิดอัดมาโครอยู่ ให้จดจำลงไฟล์ทันที
+    -- ถ้าเปิดอัดมาโครอยู่ ให้จดจำลงไฟล์
     if isRecording then
         local exactTime = tick() - recordStartTime
         RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, desiredSpeed)
-        Fluent:Notify({ Title = "Speed Recorded", Content = "บันทึกสปีด: " .. val .. " เรียบร้อย!", Duration = 2 })
+        Fluent:Notify({ Title = "Speed Recorded", Content = "บันทึกสปีด: " .. val .. " แล้ว!", Duration = 2 })
     end
 end)
