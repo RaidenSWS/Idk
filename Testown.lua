@@ -383,9 +383,9 @@ end
 local mouse = LocalPlayer:GetMouse()
 local lastGroundPos = nil
 
--- 🔥 ดักเมาส์: ให้จำพิกัดที่คลิกบนพื้นดินเตรียมไว้
-game:GetService("UserInputService").InputBegan:Connect(function(input, gpe)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 and not gpe then
+-- 🔥 ปลด GPE ออก: จับเมาส์คลิกซ้ายทุกครั้งเพื่อเอาพิกัดดินที่แท้จริง
+UserInputService.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
         pcall(function() lastGroundPos = mouse.Hit.Position end)
     end
 end)
@@ -412,7 +412,7 @@ local function StartObserving()
             local posCf = cachedPos[targetId]
             local unitName = cachedName[targetId] or "Unknown"
             
-            -- 🔥 ตอน Upgrade: ให้จำพิกัดตัวโมเดลปกติ
+            -- ตอน Upgrade ใช้พิกัดเดิมปกติ
             if not posCf then
                 local unitModel = towersFolder:FindFirstChild(targetId)
                 if unitModel then 
@@ -435,14 +435,28 @@ local function StartObserving()
         local unitModel = towersFolder:FindFirstChild(targetId)
         local unitName = unitModel and GetRealUnitName(unitModel) or "Unknown"
         
-        -- 🔥 ตอน Place: บังคับใช้พิกัดจากพื้นดิน (ไม่มีแกนหมุนมั่วๆ แบบที่พี่บอกเป๊ะ!)
-        local posCf = CFrame.new(0,0,0)
+        -- 🚀 THE GROUND ZERO FIX: ตอนวาง บังคับดึงเฉพาะพิกัดพื้นดินเท่านั้น!
+        local posCf
         if lastGroundPos then
             posCf = CFrame.new(lastGroundPos.X, lastGroundPos.Y, lastGroundPos.Z)
-            lastGroundPos = nil -- เคลียร์ค่าทิ้ง
+            lastGroundPos = nil
         elseif unitModel then
             local mCf = unitModel.PrimaryPart and unitModel.PrimaryPart.CFrame or unitModel:GetModelCFrame()
-            posCf = CFrame.new(mCf.X, mCf.Y, mCf.Z)
+            
+            -- ถัาเมาส์หลุด: ยิง Raycast จากตัวโมเดลลงพื้นเพื่อหาความสูงดิน (-300)
+            local rayOrigin = Vector3.new(mCf.X, 1000, mCf.Z)
+            local rayDir = Vector3.new(0, -3000, 0)
+            local params = RaycastParams.new()
+            params.FilterType = Enum.RaycastFilterType.Exclude
+            if Workspace:FindFirstChild("Scripted") then
+                params.FilterDescendantsInstances = {Workspace.Scripted}
+            end
+            local hit = Workspace:Raycast(rayOrigin, rayDir, params)
+            local groundY = hit and hit.Position.Y or mCf.Y
+            
+            posCf = CFrame.new(mCf.X, groundY, mCf.Z)
+        else
+            posCf = CFrame.new(0,0,0)
         end
         
         cachedPos[targetId] = posCf
@@ -485,7 +499,7 @@ end
 
 -- ============================================================================== --
 -- // 7. ลอจิกการเล่น (Play) 🔥 ซ่อมระบบข้ามเงิน และเพิ่ม Status แจ้งเตือน
--- ============================================================================== --
+-- ============================================================================== --local playInstanceMap = {} 
 local playInstanceMap = {} 
 local currentPlaybackSession = 0 
 
@@ -533,12 +547,12 @@ local function PlayMacroData()
             
             local requiredMoney = ParseMoney(step.cost)
             
-            -- 🔥 THE ZERO-COST REPAIR: ถ้าราคาเป็น 0 ให้ดึงข้อมูลมาซ่อมใหม่
+            -- 🔥 ซ่อมราคา 0 บาท (ถ้าบั๊กเป็น 0 ให้ดึงราคาจริงมาใช้ จะได้ไม่กดรัวจนค้าง)
             if requiredMoney <= 0 and step.type ~= "Sell" and step.type ~= "Speed" then
                 requiredMoney = GetExactCost(step.unit, step.type, step.level)
             end
 
-            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then 
+            if useMoney and requiredMoney > 0 and step.type ~= "Speed" then
                 local margin = requiredMoney * 0.05
                 while GetCurrentMoney() < (requiredMoney - margin) do
                     if not isReplaying or mySession ~= currentPlaybackSession then return end
@@ -555,13 +569,13 @@ local function PlayMacroData()
                 local p = {}
                 for num in string.gmatch(step.pos, "([^,]+)") do table.insert(p, tonumber(num)) end
                 
-                -- 🔥 แยกการดึงพิกัดตามไอเดียพี่เลยครับ!
+                -- 🚀 จุดสำคัญที่สุด: แยก CFrame ตอนวาง กับ ตอนอัพเกรด
                 pcall(function()
                     if step.type == "Place" then
-                        -- ตอนวาง: เอาแค่ X, Y, Z บริสุทธิ์ ไม่มีแกนหมุนมาเกะกะ (เกมจะได้ไม่บล็อก AstroJugg)
+                        -- ตอนวาง เอาแค่พิกัด X Y Z บริสุทธิ์ (AstroJugg จะวางติด 100%)
                         targetPosCf = CFrame.new(p[1] or 0, p[2] or 0, p[3] or 0)
                     else
-                        -- ตอนอัพเกรด/ขาย: ดึงมาเต็มๆ ปกติ
+                        -- ตอนอัพเกรด ดึงแกนหมุนมาใช้ตามปกติ
                         targetPosCf = CFrame.new(unpack(p))
                     end
                 end)
@@ -588,8 +602,6 @@ local function PlayMacroData()
                     local targetFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
                     if targetFolder then
                         local searchNameClean = CleanStr(step.unit)
-                        local bestDist = 999999 
-                        local bestUnit = nil
                         for _, unit in ipairs(targetFolder:GetChildren()) do
                             local alreadyOwned = false
                             for _, v in pairs(playInstanceMap) do if v == unit then alreadyOwned = true break end end
@@ -599,18 +611,13 @@ local function PlayMacroData()
                                 local sIdClean = CleanStr(unit:GetAttribute("sID") or "")
                                 if string.find(uNameClean, searchNameClean, 1, true) or string.find(sIdClean, searchNameClean, 1, true) then
                                     local cf = unit.PrimaryPart and unit.PrimaryPart.CFrame or unit:GetModelCFrame()
-                                    if cf and targetPosCf then
-                                        -- เรดาร์ 2D ไม่สนความสูง
-                                        local dist = math.sqrt((cf.Position.X - targetPosCf.Position.X)^2 + (cf.Position.Z - targetPosCf.Position.Z)^2)
-                                        if dist < bestDist then
-                                            bestDist = dist
-                                            bestUnit = unit
-                                        end
+                                    if cf and targetPosCf and (cf.Position - targetPosCf.Position).Magnitude <= 999999 then
+                                        foundUnit = unit
+                                        break
                                     end
                                 end
                             end
                         end
-                        if bestUnit then foundUnit = bestUnit end
                     end
                     
                     if not foundUnit then foundUnit = GetUnitByPosition(step.unit, targetPosCf) end
@@ -618,10 +625,6 @@ local function PlayMacroData()
                     if foundUnit then 
                         isPlaced = true 
                         playInstanceMap[step.targetID] = foundUnit 
-                    end
-                    
-                    if not isPlaced then
-                        UpdateStatus("Playing", i, step.type, step.unit, "Spamming Place (" .. attempts .. "/600)")
                     end
                     attempts = attempts + 1
                 until isPlaced or attempts >= 600 or not isReplaying or mySession ~= currentPlaybackSession
@@ -643,10 +646,12 @@ local function PlayMacroData()
                         local currentIdStr = tostring(unitToUpgrade.Name)
                         local currentIdNum = tonumber(currentIdStr)
                         
+                        -- 🔥 ยิง 2 แบบกันเหนียว (String และ Number) กันเซิร์ฟเวอร์เตะ
                         pcall(function() UpgradeRemote:FireServer(currentIdStr) end)
                         if currentIdNum then pcall(function() UpgradeRemote:FireServer(currentIdNum) end) end
                         
                         local tData = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData") and Workspace.Scripted.TowerData:FindFirstChild(currentIdStr)
+                        
                         if tData then
                             local currentUpgrades = tonumber(tData:GetAttribute("Upgrade")) or 0
                             if currentUpgrades >= targetLvl then
@@ -655,13 +660,11 @@ local function PlayMacroData()
                         end
                     end
                     
-                    if not isUpgraded and attempts >= 600 then isUpgraded = true end
-                    
-                    -- 🔥 อัพเดท Status ให้รู้ว่าทำไมถึงค้าง (มักจะเกิดจากรอเงินเด้ง)
-                    if not isUpgraded then 
-                        UpdateStatus("Playing", i, step.type, step.unit, "Spamming Upg (Wait Money/Lag? " .. attempts .. "/600)")
-                        task.wait(0.4) 
+                    if not isUpgraded and attempts >= 600 then
+                        isUpgraded = true 
                     end
+                    
+                    if not isUpgraded then task.wait(0.4) end
                     attempts = attempts + 1
                 until isUpgraded or not isReplaying or mySession ~= currentPlaybackSession
 
@@ -675,10 +678,8 @@ local function PlayMacroData()
                     if unitToSell then
                         local currentIdStr = tostring(unitToSell.Name)
                         local currentIdNum = tonumber(currentIdStr)
-                        
                         pcall(function() SellRemote:FireServer(currentIdStr) end)
                         if currentIdNum then pcall(function() SellRemote:FireServer(currentIdNum) end) end
-                        
                         task.wait(0.4)
                         if not unitToSell.Parent then 
                             playInstanceMap[step.targetID] = nil 
