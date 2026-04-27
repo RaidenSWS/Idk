@@ -324,12 +324,12 @@ Tabs.Main:AddSlider("StepDelay", { Title = "Step Delay", Default = 0.2, Min = 0.
 local PlayModes = Tabs.Main:AddDropdown("PlayModes", { Title = "Play Modes", Values = {"Time", "Wave", "Money"}, Multi = true, Default = {"Wave", "Money"} })
 
 -- ============================================================================== --
--- // 6. ลอจิกการอัด (Record) 🔥 ดักจับ Network สปีดเกม
+-- // 6. ลอจิกการอัด (Record) 🔥 Safe UI Speed Observer (ปลอดภัย 100% ไม่โดนแบน)
 -- ============================================================================== --
 local cachedPos = {}
 local cachedName = {}
 local lastUpgRecord = {}
-local lastRecordedSpeed = -1 -- 🔥 เพิ่มตัวแปรเก็บสปีด
+local lastRecordedSpeed = -1 -- 🔥 ตัวเก็บสปีด
 
 local function RecordAction(actionType, targetId, posCf, unitName, exactTime, specificLevel)
     actionCount = actionCount + 1
@@ -349,7 +349,7 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
 
     task.spawn(function()
         local exactCost = GetExactCost(unitName, actionType, specificLevel or 1)
-        if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then -- 🔥 ข้ามเช็คเงินถ้าปรับสปีด
+        if exactCost == 0 and actionType ~= "Sell" and actionType ~= "Speed" then
             local passTime = 0
             while passTime < 1.5 do
                 for _, drop in ipairs(MoneyQueue) do
@@ -367,28 +367,6 @@ local function RecordAction(actionType, targetId, posCf, unitName, exactTime, sp
     end)
 end
 
--- 🔥 วิชาสายแฮกเกอร์: ดักจับสัญญาณเปลี่ยนสปีดที่ถูกส่งไปเซิร์ฟเวอร์โดยตรง
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    
-    if isRecording and method == "FireServer" then
-        if self.Name == "Change" and self.Parent and self.Parent.Name == "Speed" then
-            local args = {...}
-            local speedVal = tonumber(args[1]) or 0
-            
-            task.spawn(function()
-                if lastRecordedSpeed ~= speedVal then
-                    lastRecordedSpeed = speedVal
-                    local exactTime = tick() - recordStartTime
-                    RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, speedVal)
-                end
-            end)
-        end
-    end
-    return oldNamecall(self, ...)
-end))
-
 local function StartObserving()
     local towerDataFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("TowerData")
     local towersFolder = Workspace:FindFirstChild("Scripted") and Workspace.Scripted:FindFirstChild("Towers")
@@ -397,6 +375,40 @@ local function StartObserving()
     table.clear(cachedPos)
     table.clear(cachedName)
     table.clear(lastUpgRecord)
+
+    -- 🔥 ปลอดภัย 100%: ลูปแอบดูการเปิด/ปิด UI สปีด แทนการแฮกหลังบ้าน
+    task.spawn(function()
+        lastRecordedSpeed = -1
+        while isRecording do
+            task.wait(0.2)
+            pcall(function()
+                local currentSpeed = -1
+                local towersGui = LocalPlayer.PlayerGui:FindFirstChild("Towers")
+                if towersGui then
+                    local speedBtn = towersGui:FindFirstChild("speedButton")
+                    if speedBtn then
+                        if speedBtn:FindFirstChild("Pause") and speedBtn.Pause.Visible then currentSpeed = 0
+                        else
+                            for i = 1, 5 do
+                                local child = speedBtn:FindFirstChild(tostring(i).."x")
+                                if child and child:IsA("GuiObject") and child.Visible then currentSpeed = i break end
+                            end
+                        end
+                    end
+                end
+                
+                if currentSpeed ~= -1 then
+                    if lastRecordedSpeed == -1 then 
+                        lastRecordedSpeed = currentSpeed 
+                    elseif currentSpeed ~= lastRecordedSpeed then
+                        local exactTime = tick() - recordStartTime
+                        RecordAction("Speed", "GameSpeed", nil, "SpeedControl", exactTime, currentSpeed)
+                        lastRecordedSpeed = currentSpeed
+                    end
+                end
+            end)
+        end
+    end)
 
     local function hookTowerData(tDataObj)
         local upgConn = tDataObj:GetAttributeChangedSignal("Upgrade"):Connect(function()
@@ -472,12 +484,12 @@ local function StartRecordingProcess()
     isRecording = true
     WipeRecordingState()
     UpdateStatus("Recording...", "-", "-", "-", "Start placing units")
-    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบดักสปีดทำงาน)", Duration = 3 })
+    Fluent:Notify({ Title = "Recording Started", Content = "เริ่มอัดมาโคร! (ระบบจำสปีดแบบปลอดภัย 100%)", Duration = 3 })
     StartObserving()
 end
 
 -- ============================================================================== --
--- // 7. ลอจิกการเล่น (Play) 🔥 รองรับการเล่นสปีด
+-- // 7. ลอจิกการเล่น (Play) 🔥 รองรับสปีดเกมแบบปลอดภัย
 -- ============================================================================== --
 local playInstanceMap = {} 
 local currentPlaybackSession = 0 
@@ -543,7 +555,7 @@ local function PlayMacroData()
                 targetPosCf = CFrame.new(unpack(p))
             end
 
-            -- 🔥 ระบบรันคำสั่งสปีดเกม
+            -- 🔥 ระบบสั่งปรับสปีดตอน Play
             if step.type == "Speed" then
                 local targetSpeed = tonumber(step.level) or 1
                 pcall(function()
